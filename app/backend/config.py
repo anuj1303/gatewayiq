@@ -56,7 +56,7 @@ import json as _json  # noqa: E402
 
 _PRICING_DEFAULT = {
     "models": {}, "default": {"input": 1.0, "output": 5.0},
-    "ui": {"expensive_label": "Premium models", "cheap_label": "Standard models"},
+    "ui": {"expensive_label": "Premium", "cheap_label": "Standard"},
 }
 
 
@@ -74,8 +74,8 @@ def _normalise_pricing(raw):
             name = t.get("name")
             if name and name not in models:
                 models[name] = {"input": t.get("input", 1.0), "output": t.get("output", 5.0), "tier": tier}
-    ui.setdefault("expensive_label", "Premium models")
-    ui.setdefault("cheap_label", "Standard models")
+    ui.setdefault("expensive_label", "Premium")
+    ui.setdefault("cheap_label", "Standard")
     return {"models": models, "default": raw.get("default") or {"input": 1.0, "output": 5.0}, "ui": ui}
 
 
@@ -104,8 +104,8 @@ PREMIUM_MODELS = [n for n, m in MODEL_RATES.items() if (m.get("tier") == "premiu
 STANDARD_MODELS = [n for n, m in MODEL_RATES.items() if (m.get("tier") != "premium")]
 
 # Short UI labels for the two model tiers (used in charts / columns / reco text).
-EXPENSIVE_LABEL = MODEL_PRICING["ui"].get("expensive_label", "Premium models")
-CHEAP_LABEL = MODEL_PRICING["ui"].get("cheap_label", "Standard models")
+EXPENSIVE_LABEL = MODEL_PRICING["ui"].get("expensive_label", "Premium")
+CHEAP_LABEL = MODEL_PRICING["ui"].get("cheap_label", "Standard")
 
 # ── UC target (Genie-able source of truth the loaders write) ─────────────────
 UC_CATALOG = _env("UC_CATALOG")                      # REQUIRED

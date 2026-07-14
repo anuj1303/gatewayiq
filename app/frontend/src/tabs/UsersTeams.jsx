@@ -7,7 +7,7 @@ import { fetchDataset, fmtInt, fmtUsd, fmtCompact, fmtNum } from '../api'
 const N = (v) => (v == null ? 0 : +v)
 
 export default function UsersTeams({ data }) {
-  const L = data.ui_labels || { expensive: 'Sonnet', cheap: 'Haiku' }
+  const L = data.ui_labels || { expensive: 'Premium', cheap: 'Standard' }
   const [detail, setDetail] = useState(null)
   const [useCaseFilter, setUseCaseFilter] = useState('all')
 

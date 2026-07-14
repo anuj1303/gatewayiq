@@ -8,7 +8,7 @@ import { fmtInt, fmtUsd, fmtNum, fmtCompact, fmtDate } from '../api'
 const N = (v) => (v == null ? 0 : +v)
 
 export default function DeveloperProductivity({ data }) {
-  const L = data.ui_labels || { expensive: 'Sonnet', cheap: 'Haiku' }
+  const L = data.ui_labels || { expensive: 'Premium', cheap: 'Standard' }
   const dev = data.ds_dev_prod?.rows || []
   const mix = (data.ds_dev_model_mix?.rows || []).map((r) => ({ ...r, requests: N(r.requests) }))
   const impact = (data.ds_productivity_impact?.rows || [])

@@ -1,7 +1,7 @@
 {
   "_note": "FALLBACK per-model pricing for Unity AI Gateway foundation models. Rates are APPROXIMATE published $/1M tokens (US) and WILL drift — they are overridden per model, per region, by scripts/fetch_pricing.py which reads the customer's own system.billing.list_prices. Keys should match the served-entity / destination_model values in the inference logs. 'tier': premium|standard|embedding. Verify/refresh before relying on the fallback.",
   "default": { "input": 1.0, "output": 5.0, "tier": "standard" },
-  "ui": { "expensive_label": "Premium models", "cheap_label": "Standard models" },
+  "ui": { "expensive_label": "Premium", "cheap_label": "Standard" },
   "models": {
     "databricks-claude-opus-4-1":            { "input": 15.0, "output": 75.0, "tier": "premium" },
     "databricks-claude-sonnet-4-6":          { "input": 3.0,  "output": 15.0, "tier": "premium" },

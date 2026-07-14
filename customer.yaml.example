@@ -48,7 +48,7 @@ app:
 # and falls back to scripts/gateway_etl/model_pricing.json for anything it can't
 # resolve. You normally leave this block out entirely. Use it only to OVERRIDE:
 # model_pricing:
-#   labels: { expensive: "Premium models", cheap: "Standard models" }  # UI tier labels
+#   labels: { expensive: "Premium", cheap: "Standard" }  # UI tier labels
 #   default: { input: 1.0, output: 5.0 }                               # unlisted-model rate ($/1M tokens)
 #   models:                                                            # per-model rate overrides
 #     databricks-claude-sonnet-4-6: { input: 3.0, output: 15.0, tier: premium }

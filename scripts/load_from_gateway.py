@@ -135,9 +135,19 @@ def _reprice(sql):
 
 
 def sub(s):
-    """Repoint captured demo SQL at the target UC schema + apply configured pricing."""
+    """Repoint captured demo SQL at the target UC schema + de-demo it: apply the
+    configured pricing, strip requester email domains to handles (domain-agnostic),
+    and swap the demo tier names in user-facing text for the configured labels."""
     s = s.replace("finserv_ai_governance.gateway_demo.", TGT + ".").replace("gateway_demo.", TGT + ".")
-    return _reprice(s)
+    s = _reprice(s)
+    # Email-domain scrub: REPLACE(x, '@<demo-domain>', '') → SPLIT_PART(x, '@', 1)
+    # so the handle is derived for ANY customer domain, not a hard-coded one.
+    s = re.sub(r"REPLACE\(\s*([^,]+?)\s*,\s*'@[^']*'\s*,\s*''\s*\)", r"SPLIT_PART(\1, '@', 1)", s)
+    # Demo tier names in recommendation/explanation TEXT → configured labels. Model
+    # IDs are lowercase (databricks-claude-sonnet-…) so \bSonnet\b/\bHaiku\b only hit prose.
+    s = re.sub(r"\bSonnet\b", cfg.EXPENSIVE_LABEL, s)
+    s = re.sub(r"\bHaiku\b", cfg.CHEAP_LABEL, s)
+    return s
 
 
 def view_body(ddl):
@@ -211,6 +221,32 @@ def main():
     print("== 3. anomaly_legend (static ref) ==")
     run(f"CREATE TABLE IF NOT EXISTS {TGT}.anomaly_legend (priority INT, anomaly_code STRING, anomaly_type STRING, "
         f"what_it_detects STRING, example STRING, detection_method STRING)")
+    # Seed the standard anomaly catalog (generic reference, not customer data) so
+    # ds_legend / ds_anomaly_catalog aren't empty. Idempotent: only if the table is empty.
+    exp, ch = cfg.EXPENSIVE_LABEL, cfg.CHEAP_LABEL
+    legend = [
+        (1, "VOLUME_SPIKE", "Volume Spike", "Request volume far above the user's rolling baseline",
+         "e.g. 3x normal daily requests", "Statistical (rolling baseline x multiplier)"),
+        (2, "TOKEN_BURN", "Token Burn", "Tokens-per-request far above the user's baseline",
+         "e.g. 10x normal tokens/request", "Statistical (rolling baseline x multiplier)"),
+        (3, "MODEL_MISUSE", "Model Misuse", f"Trivial queries sent to a {exp} model that {ch} could handle",
+         f"e.g. simple lookups on a {exp} model", "Rule (use-case class + model tier)"),
+        (4, "COST_SPIKE", "Cost Spike", "Daily spend far above the user's baseline",
+         "e.g. 5x normal daily cost", "Statistical (rolling baseline x multiplier)"),
+        (5, "OFF_HOURS", "Off-Hours Access", "Activity during late-night or weekend windows",
+         "e.g. requests at 03:00 local", "Rule (event hour / day-of-week)"),
+        (6, "RATE_LIMIT_BREACH", "Rate Limit Breach", "Requests blocked by the per-user token budget",
+         "e.g. repeated HTTP 429s", "AI Gateway rate limiting (429)"),
+        (7, "GUARDRAIL", "Guardrail Block", "Prompts blocked by content-policy guardrails",
+         "e.g. blocked PII / toxic prompt", "AI Gateway guardrails (403/400)"),
+        (8, "SENSITIVE_QUERY", "Sensitive Query", "Requests containing credential / PII / insider / bypass patterns",
+         "e.g. asking to exfiltrate secrets", "AI classification (LLM content analysis)"),
+    ]
+    vals = ", ".join("(%d, %s)" % (r[0], ", ".join("'%s'" % c.replace("'", "''") for c in r[1:])) for r in legend)
+    run(f"INSERT INTO {TGT}.anomaly_legend SELECT * FROM (VALUES {vals}) "
+        f"AS t(priority, anomaly_code, anomaly_type, what_it_detects, example, detection_method) "
+        f"WHERE NOT EXISTS (SELECT 1 FROM {TGT}.anomaly_legend)")
+    print("  seeded 8 anomaly types (if empty)")
 
     print("== 4. views ==")
     for name, ddl in views.items():

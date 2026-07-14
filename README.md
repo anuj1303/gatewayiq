@@ -113,7 +113,7 @@ is populated automatically at install:
    rate, or specific models:
    ```yaml
    model_pricing:
-     labels: { expensive: "Premium models", cheap: "Standard models" }
+     labels: { expensive: "Premium", cheap: "Standard" }
      models:
        databricks-claude-sonnet-4-6: { input: 3.0, output: 15.0, tier: premium }
    ```

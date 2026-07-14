@@ -49,8 +49,8 @@ def resolve_pricing(c):
         models[nm] = {**models.get(nm, {}), **r}
     if isinstance(ov.get("default"), dict):
         default.update(ov["default"])
-    ui.setdefault("expensive_label", "Premium models")
-    ui.setdefault("cheap_label", "Standard models")
+    ui.setdefault("expensive_label", "Premium")
+    ui.setdefault("cheap_label", "Standard")
     return {"models": models, "default": default, "ui": ui}
 
 
