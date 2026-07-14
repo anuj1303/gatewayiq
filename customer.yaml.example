@@ -1,56 +1,66 @@
-# GatewayIQ — single customer config. Copy to `customer.yaml` and fill in.
-# Everything the install needs is here; the renderer + bundle + installer all read it.
+# =============================================================================
+# GatewayIQ — customer config (SINGLE source of truth for the whole install).
+# Copy to `customer.yaml`, then replace the SAMPLE values below with your own.
+# The values shown are a realistic example for a fictional customer "Acme".
+#   ./install.sh customer.yaml   ← renders app.yaml + bundle vars, deploys, loads data
+# =============================================================================
 
-app_name: gatewayiq                       # Databricks App name
-profile: DEFAULT                          # Databricks CLI profile for this workspace
-warehouse_id: ""                          # SQL warehouse id (for the loaders)
+app_name: gatewayiq                 # Databricks App name (lowercase, no spaces)
+profile: acme-prod                  # Databricks CLI profile that points at the customer workspace
+warehouse_id: "a1b2c3d4e5f60718"    # SQL warehouse id used by the loaders (Warehouse → Connection details)
 
 lakebase:
-  instance: ""                            # Lakebase instance NAME (for the app db resource)
-  host: ""                                # Lakebase instance host (PGHOST)
-  database: gatewayiq
-  admin_user: ""                          # identity the loaders connect as (table owner)
-  app_sp: ""                              # app service-principal client_id (Postgres role)
+  instance: acme-lakebase           # Lakebase INSTANCE name (Compute → Lakebase)
+  host: instance-8f2c19a4-3b7d-4e51-9c02-a1b2c3d4e5f6.database.cloud.databricks.com  # instance host (PGHOST)
+  database: gatewayiq               # DB the app reads/writes (created by the installer if missing)
+  admin_user: data-platform@acme.com   # identity the LOADERS connect as (owns the tables); your CLI login
+  app_sp: 11111111-2222-3333-4444-555555555555  # the App's service-principal client_id (its Postgres role)
 
 uc:
-  catalog: ""                             # UC catalog the loader writes (Genie source of truth)
-  schema: gatewayiq
+  catalog: acme_ai_gov              # UC catalog the loader writes to (the Genie-able source of truth)
+  schema: gatewayiq                 # UC schema (keep 'gatewayiq' unless you have a convention)
 
 sources:
-  inference_table: ""                     # AI Gateway inference (payload) table: cat.sch.table
-  usage_table: system.serving.endpoint_usage
-  audit_table: system.access.audit
-  directory_table: ""                     # email / team / dept / role / manager
-  # directory column names (match the customer's table)
-  dir_email_col: email
-  dir_team_col: team
-  dir_dept_col: department
-  dir_role_col: title
-  dir_manager_col: manager_email
+  inference_table: acme_ai_gov.gateway.inference_logs   # Unity AI Gateway inference (payload) logging table
+  usage_table: system.serving.endpoint_usage            # AI Gateway usage system table (usually leave as-is)
+  audit_table: system.access.audit                      # UC audit log (leave as-is)
+  directory_table: acme_hr.people.directory             # org directory: one row per person
+  # Column names IN your directory table (map to the customer's real schema):
+  dir_email_col: email              # → person's email
+  dir_team_col: team                # → team name
+  dir_dept_col: department          # → department / business unit
+  dir_role_col: title               # → job title
+  dir_manager_col: manager_email    # → their manager's email (drives the org hierarchy / scoping)
 
 identity:
-  email_domain: ""                        # customer email domain, e.g. acme.com
-  admins: []                              # list of admin emails
+  email_domain: acme.com            # customer email domain (used to turn handles ↔ emails)
+  admins:                           # users who get the full admin (all-users) view
+    - ai-governance-admin@acme.com
+    - platform-lead@acme.com
 
 app:
-  url: ""                                 # deployed app URL (email links)
-  classifier_model: databricks-claude-haiku-4-5
+  url: https://gatewayiq-1234567890.aws.databricksapps.com  # deployed app URL (used in email links)
+  classifier_model: databricks-claude-haiku-4-5             # AI model that classifies requests into use cases
 
-model_pricing:                            # $ per 1M tokens + UI labels
-  expensive: { name: claude-sonnet-4-6, label: Sonnet, input: 3.0, output: 15.0 }
-  cheap:     { name: claude-haiku-4-5,  label: Haiku,  input: 0.8, output: 4.0 }
-  default:   { input: 1.0, output: 5.0 }
+# Model pricing ($ per 1M tokens) + short UI labels for the two model tiers.
+# Set to the customer's actual models & negotiated rates — flows through the
+# ETL cost math AND the UI/recommendation labels. No SQL edits needed.
+model_pricing:
+  expensive: { name: claude-sonnet-4-6, label: Sonnet, input: 3.0, output: 15.0 }   # premium tier
+  cheap:     { name: claude-haiku-4-5,  label: Haiku,  input: 0.8, output: 4.0 }     # cheap tier
+  default:   { input: 1.0, output: 5.0 }                                              # any other model
 
 mail:
-  transport: gmail
-  from_name: GatewayIQ
-  from_email: ""                          # sender on the customer domain
-  quota_project: ""                       # gmail transport only
-  secret_scope: gatewayiq                 # scope holding google-client-id/secret/refresh-token
+  transport: gmail                          # "gmail" (Gmail API) — the supported transport today
+  from_name: GatewayIQ                      # display name on the weekly emails
+  from_email: ai-gateway-reports@acme.com   # sender address (on the customer's domain)
+  quota_project: acme-gcp-project           # GCP project for the Gmail API quota header (gmail transport)
+  secret_scope: gatewayiq                   # secret scope holding google-client-id / -secret / -refresh-token
+                                            # (create this scope by hand — secrets can't live in this file)
 
 weekly_report:
-  schedule_cron: "0 0 9 ? * MON"          # Quartz cron
-  timezone: UTC
-  test_mode: true                         # true → all mail to test_recipient
-  test_recipient: ""
-  days: 7
+  schedule_cron: "0 0 9 ? * MON"            # Quartz cron — Mondays 09:00
+  timezone: America/New_York                # timezone for the schedule
+  test_mode: true                           # true → ALL mail goes to test_recipient (safe default)
+  test_recipient: ai-governance-admin@acme.com   # where test-mode mail lands; flip test_mode→false to email real users
+  days: 7                                   # report window (last N days)
