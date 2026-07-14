@@ -23,7 +23,26 @@ Unity AI Gateway logs + system tables            (real source)
 2. A SQL **warehouse**, a **Lakebase** instance, a **service principal** for the app,
    and (for email) a mail transport + secret scope.
 
-## Config (fill every `<SET_ME>` in `app/app.yaml`; see `app/backend/config.py`)
+## Install (one command)
+
+Everything is driven by a **single `customer.yaml`** and packaged as a **Databricks Asset Bundle** + a one-command wrapper. From a clone of this repo:
+
+```bash
+cp customer.yaml.example customer.yaml      # 1. fill in the customer's values (one file)
+# 2. create the mail secret scope `gatewayiq` (google-client-id/secret/refresh-token) — secrets can't live in yaml
+./install.sh customer.yaml                  # 3. installs everything
+```
+
+`install.sh` does three things from that one config:
+1. **render** `app.yaml` env + bundle variables from `customer.yaml`,
+2. **`databricks bundle deploy`** — provisions the **App + its db/secret resources + the weekly Job** declaratively (no `apps update --json`, no manual Job creation), and
+3. **data-plane install** (`scripts/install.py`) — creates the Lakebase DB, runs `load_from_gateway.py` (AI classifier) to build `ds_*` in UC, copies them to Lakebase, and seeds identity from the directory.
+
+Re-running `install.sh` (or `databricks bundle deploy`) is idempotent — that's your upgrade path too. `bundle validate` passes.
+
+Prefer to run steps individually? Each is a standalone script (`render_config.py`, `load_from_gateway.py`, `seed_identity.py`, `install.py`) — see below.
+
+## Config reference (`customer.yaml`; maps to `app/backend/config.py`)
 | Env | Required | Notes |
 |---|---|---|
 | `PGHOST` / `PGDATABASE` | ✅ / (gatewayiq) | Lakebase serving DB |
@@ -41,7 +60,12 @@ Unity AI Gateway logs + system tables            (real source)
 | `MAIL_FROM_EMAIL` / `GMAIL_*` | to send | mail sender + secret-scope creds |
 | `IDENTITY_SOURCE` | (directory) | leave as `directory` |
 
-## Deploy steps
+## Individual steps (what `install.sh` runs under the hood)
+> The App, its db/secret **resources**, and the weekly **Job** are all declared in
+> `databricks.yml` and created by `databricks bundle deploy` — no manual
+> `apps update --json` or Job creation. The steps below are the data-plane
+> pieces the bundle can't do (plus the dataset/identity builders).
+
 1. **Build datasets from real data** → UC (`ai_query` classifier ON by default):
    ```bash
    SOURCE_INFERENCE_TABLE=<cat.sch.inference> SOURCE_DIRECTORY_TABLE=<cat.sch.dir> \

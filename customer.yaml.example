@@ -1,0 +1,56 @@
+# GatewayIQ — single customer config. Copy to `customer.yaml` and fill in.
+# Everything the install needs is here; the renderer + bundle + installer all read it.
+
+app_name: gatewayiq                       # Databricks App name
+profile: DEFAULT                          # Databricks CLI profile for this workspace
+warehouse_id: ""                          # SQL warehouse id (for the loaders)
+
+lakebase:
+  instance: ""                            # Lakebase instance NAME (for the app db resource)
+  host: ""                                # Lakebase instance host (PGHOST)
+  database: gatewayiq
+  admin_user: ""                          # identity the loaders connect as (table owner)
+  app_sp: ""                              # app service-principal client_id (Postgres role)
+
+uc:
+  catalog: ""                             # UC catalog the loader writes (Genie source of truth)
+  schema: gatewayiq
+
+sources:
+  inference_table: ""                     # AI Gateway inference (payload) table: cat.sch.table
+  usage_table: system.serving.endpoint_usage
+  audit_table: system.access.audit
+  directory_table: ""                     # email / team / dept / role / manager
+  # directory column names (match the customer's table)
+  dir_email_col: email
+  dir_team_col: team
+  dir_dept_col: department
+  dir_role_col: title
+  dir_manager_col: manager_email
+
+identity:
+  email_domain: ""                        # customer email domain, e.g. acme.com
+  admins: []                              # list of admin emails
+
+app:
+  url: ""                                 # deployed app URL (email links)
+  classifier_model: databricks-claude-haiku-4-5
+
+model_pricing:                            # $ per 1M tokens + UI labels
+  expensive: { name: claude-sonnet-4-6, label: Sonnet, input: 3.0, output: 15.0 }
+  cheap:     { name: claude-haiku-4-5,  label: Haiku,  input: 0.8, output: 4.0 }
+  default:   { input: 1.0, output: 5.0 }
+
+mail:
+  transport: gmail
+  from_name: GatewayIQ
+  from_email: ""                          # sender on the customer domain
+  quota_project: ""                       # gmail transport only
+  secret_scope: gatewayiq                 # scope holding google-client-id/secret/refresh-token
+
+weekly_report:
+  schedule_cron: "0 0 9 ? * MON"          # Quartz cron
+  timezone: UTC
+  test_mode: true                         # true → all mail to test_recipient
+  test_recipient: ""
+  days: 7

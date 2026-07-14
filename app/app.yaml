@@ -1,66 +1,11 @@
-# GatewayIQ — production app config. Replace every <SET_ME> before deploying.
-# (Databricks Apps does NOT auto-apply the `resources:` block on deploy — after
-#  editing, register them with: databricks apps update <app> --json '{resources:[…]}')
+# This file is GENERATED from customer.yaml by scripts/render_config.py.
+# Run `./install.sh customer.yaml` (or `python3 scripts/render_config.py --config customer.yaml`)
+# to fill in the env below. App db/secret RESOURCES are declared in databricks.yml
+# (the bundle), NOT here.
 command: ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]
 
 env:
-  # ── Lakebase (serving DB) ──
-  - name: "PGHOST"
-    value: "<SET_ME: lakebase-instance-host>"
-  - name: "PGDATABASE"
-    value: "gatewayiq"
-  - name: "PGPORT"
-    value: "5432"
-  - name: "PGSSLMODE"
-    value: "require"
-  - name: "APP_SP_ROLE"
-    value: "<SET_ME: app service principal client_id>"
-  # ── App identity ──
-  - name: "APP_URL"
-    value: "<SET_ME: https://<app>.<region>.databricksapps.com>"
-  - name: "EMAIL_DOMAIN"
-    value: "<SET_ME: customer email domain, e.g. acme.com>"
-  - name: "ADMIN_EMAILS"
-    value: "<SET_ME: comma-separated admin emails>"
   - name: "IDENTITY_SOURCE"
     value: "directory"
-  # ── Real data sources (Unity AI Gateway) ──
-  - name: "SOURCE_INFERENCE_TABLE"
-    value: "<SET_ME: catalog.schema.ai_gateway_inference_table>"
-  - name: "SOURCE_DIRECTORY_TABLE"
-    value: "<SET_ME: catalog.schema.user_directory>"
-  - name: "UC_CATALOG"
-    value: "<SET_ME: uc_catalog>"
-  - name: "UC_SCHEMA"
-    value: "gatewayiq"
-  - name: "CLASSIFIER_MODEL"
-    value: "databricks-claude-haiku-4-5"
-  # Model tiers + $/1M rates + UI labels (defaults = Claude Sonnet/Haiku).
-  - name: "MODEL_PRICING"
-    value: '{"expensive":{"name":"claude-sonnet-4-6","label":"Sonnet","input":3.0,"output":15.0},"cheap":{"name":"claude-haiku-4-5","label":"Haiku","input":0.8,"output":4.0},"default":{"input":1.0,"output":5.0}}'
-  # ── Mail (weekly reports) ──
-  - name: "MAIL_FROM_NAME"
-    value: "GatewayIQ"
-  - name: "MAIL_FROM_EMAIL"
-    value: "<SET_ME: sender@customer-domain>"
-  - name: "GOOGLE_QUOTA_PROJECT"
-    value: "<SET_ME: gcp project (gmail transport only)>"
-  - name: "GMAIL_CLIENT_ID"
-    valueFrom: "gmail-client-id"
-  - name: "GMAIL_CLIENT_SECRET"
-    valueFrom: "gmail-client-secret"
-  - name: "GMAIL_REFRESH_TOKEN"
-    valueFrom: "gmail-refresh-token"
-
-resources:
-  - name: "gatewayiq-db"
-    database:
-      instance_name: "<SET_ME: lakebase-instance-name>"
-      database_name: "gatewayiq"
-      permission: "CAN_CONNECT_AND_CREATE"
-  - name: "gmail-client-id"
-    secret: { scope: "gatewayiq", key: "google-client-id", permission: "READ" }
-  - name: "gmail-client-secret"
-    secret: { scope: "gatewayiq", key: "google-client-secret", permission: "READ" }
-  - name: "gmail-refresh-token"
-    secret: { scope: "gatewayiq", key: "google-refresh-token", permission: "READ" }
+  # …the rest of the env (PGHOST, EMAIL_DOMAIN, SOURCE_*, MODEL_PRICING, GMAIL_* …)
+  # is written here by render_config.py from customer.yaml.
