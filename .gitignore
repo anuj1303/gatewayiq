@@ -1,0 +1,10 @@
+# Build artifacts / deps
+node_modules/
+dist/
+__pycache__/
+*.pyc
+.databricks/
+.DS_Store
+# Local env / creds — never commit
+.env
+*.local
