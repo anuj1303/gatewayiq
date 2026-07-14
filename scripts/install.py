@@ -18,6 +18,8 @@ from psycopg2 import sql as _sql
 from psycopg2.extras import execute_values
 
 HERE = os.path.dirname(__file__)
+sys.path.insert(0, HERE)
+from render_config import resolve_pricing  # noqa: E402
 
 
 def _cfg_to_env(c):
@@ -33,7 +35,9 @@ def _cfg_to_env(c):
     e["SOURCE_DIRECTORY_TABLE"] = c["sources"]["directory_table"]
     e["SOURCE_USAGE_TABLE"] = c["sources"].get("usage_table", "system.serving.endpoint_usage")
     e["APP_URL"] = c["app"]["url"]; e["CLASSIFIER_MODEL"] = c["app"].get("classifier_model", "databricks-claude-haiku-4-5")
-    e["MODEL_PRICING"] = json.dumps(c["model_pricing"])
+    # Full per-model map: region-resolved (fetch_pricing) + bundled fallback +
+    # any customer.yaml override — the loader prices every model from this.
+    e["MODEL_PRICING"] = json.dumps(resolve_pricing(c))
 
 
 def token(profile):

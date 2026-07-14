@@ -41,23 +41,71 @@ SOURCE_DIRECTORY_TABLE = _env("SOURCE_DIRECTORY_TABLE")   # REQUIRED for identit
 # AI classifier for use-case labelling (ALWAYS on — classification MUST be AI-driven).
 CLASSIFIER_MODEL = _env("CLASSIFIER_MODEL", "databricks-claude-haiku-4-5")
 
-# Model pricing ($ per 1M tokens) used by the loader to compute cost from tokens.
-# Two named tiers + a default for any other model. Set `MODEL_PRICING` (JSON) to
-# the customer's actual models & negotiated rates — no SQL editing needed.
+# Model pricing ($ per 1M tokens) used by the loader to compute cost per request.
+# FULL per-model map — one entry per model the customer runs through Unity AI
+# Gateway (any number of models), so cost is correct for the whole catalog, not
+# just two tiers. Resolution order:
+#   1. MODEL_PRICING env (JSON) — set in app.yaml by render_config (the APP path).
+#   2. scripts/gateway_etl/pricing.resolved.json — written by fetch_pricing.py,
+#      region/contract-correct from the customer's system.billing (the LOADER path).
+#   3. scripts/gateway_etl/model_pricing.json — bundled approximate fallback.
+# The canonical shape is {"models": {name: {input,output,tier}}, "default": {...},
+# "ui": {expensive_label, cheap_label}}. The old two-tier shape (expensive/cheap)
+# is still accepted and normalised for backward compatibility.
 import json as _json  # noqa: E402
+
 _PRICING_DEFAULT = {
-    "expensive": {"name": "claude-sonnet-4-6", "label": "Sonnet", "input": 3.0, "output": 15.0},
-    "cheap":     {"name": "claude-haiku-4-5",  "label": "Haiku",  "input": 0.8, "output": 4.0},
-    "default":   {"input": 1.0, "output": 5.0},
+    "models": {}, "default": {"input": 1.0, "output": 5.0},
+    "ui": {"expensive_label": "Premium models", "cheap_label": "Standard models"},
 }
-try:
-    MODEL_PRICING = _json.loads(_env("MODEL_PRICING")) if _env("MODEL_PRICING") else _PRICING_DEFAULT
-except Exception:
-    MODEL_PRICING = _PRICING_DEFAULT
+
+
+def _normalise_pricing(raw):
+    """Accept either the full-map shape or the legacy expensive/cheap shape."""
+    if not isinstance(raw, dict):
+        return dict(_PRICING_DEFAULT)
+    models = dict(raw.get("models") or {})
+    ui = dict(raw.get("ui") or {})
+    # Legacy: build models + labels from expensive/cheap tiers.
+    for tier_key, tier in (("expensive", "premium"), ("cheap", "standard")):
+        t = raw.get(tier_key)
+        if isinstance(t, dict):
+            ui.setdefault(f"{tier_key}_label", t.get("label"))
+            name = t.get("name")
+            if name and name not in models:
+                models[name] = {"input": t.get("input", 1.0), "output": t.get("output", 5.0), "tier": tier}
+    ui.setdefault("expensive_label", "Premium models")
+    ui.setdefault("cheap_label", "Standard models")
+    return {"models": models, "default": raw.get("default") or {"input": 1.0, "output": 5.0}, "ui": ui}
+
+
+def _load_pricing():
+    raw = _env("MODEL_PRICING")
+    if raw:
+        try:
+            return _normalise_pricing(_json.loads(raw))
+        except Exception:
+            pass
+    _etl = os.path.join(os.path.dirname(__file__), "..", "..", "scripts", "gateway_etl")
+    for fn in ("pricing.resolved.json", "model_pricing.json"):
+        try:
+            with open(os.path.normpath(os.path.join(_etl, fn))) as f:
+                return _normalise_pricing(_json.load(f))
+        except Exception:
+            continue
+    return dict(_PRICING_DEFAULT)
+
+
+MODEL_PRICING = _load_pricing()
+MODEL_RATES = MODEL_PRICING["models"]                 # {model_name: {input, output, tier}}
+DEFAULT_RATE = MODEL_PRICING["default"]               # {input, output} for unlisted models
+# Tier membership (drives the "premium vs standard" model-mix / savings analytics).
+PREMIUM_MODELS = [n for n, m in MODEL_RATES.items() if (m.get("tier") == "premium")]
+STANDARD_MODELS = [n for n, m in MODEL_RATES.items() if (m.get("tier") != "premium")]
 
 # Short UI labels for the two model tiers (used in charts / columns / reco text).
-EXPENSIVE_LABEL = MODEL_PRICING.get("expensive", {}).get("label", "Sonnet")
-CHEAP_LABEL = MODEL_PRICING.get("cheap", {}).get("label", "Haiku")
+EXPENSIVE_LABEL = MODEL_PRICING["ui"].get("expensive_label", "Premium models")
+CHEAP_LABEL = MODEL_PRICING["ui"].get("cheap_label", "Standard models")
 
 # ── UC target (Genie-able source of truth the loaders write) ─────────────────
 UC_CATALOG = _env("UC_CATALOG")                      # REQUIRED

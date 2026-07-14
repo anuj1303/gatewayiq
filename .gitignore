@@ -8,3 +8,6 @@ __pycache__/
 # Local env / creds — never commit
 .env
 *.local
+
+# Generated per-customer, region-correct pricing (from fetch_pricing.py)
+scripts/gateway_etl/pricing.resolved.json

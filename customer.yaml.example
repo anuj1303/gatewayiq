@@ -42,13 +42,17 @@ app:
   url: https://gatewayiq-1234567890.aws.databricksapps.com  # deployed app URL (used in email links)
   classifier_model: databricks-claude-haiku-4-5             # AI model that classifies requests into use cases
 
-# Model pricing ($ per 1M tokens) + short UI labels for the two model tiers.
-# Set to the customer's actual models & negotiated rates — flows through the
-# ETL cost math AND the UI/recommendation labels. No SQL edits needed.
-model_pricing:
-  expensive: { name: claude-sonnet-4-6, label: Sonnet, input: 3.0, output: 15.0 }   # premium tier
-  cheap:     { name: claude-haiku-4-5,  label: Haiku,  input: 0.8, output: 4.0 }     # cheap tier
-  default:   { input: 1.0, output: 5.0 }                                              # any other model
+# Model pricing — OPTIONAL. Pricing for the whole Unity AI Gateway model catalog
+# is resolved automatically at install time by scripts/fetch_pricing.py, which
+# reads the customer's own system.billing.list_prices (region- & contract-correct)
+# and falls back to scripts/gateway_etl/model_pricing.json for anything it can't
+# resolve. You normally leave this block out entirely. Use it only to OVERRIDE:
+# model_pricing:
+#   labels: { expensive: "Premium models", cheap: "Standard models" }  # UI tier labels
+#   default: { input: 1.0, output: 5.0 }                               # unlisted-model rate ($/1M tokens)
+#   models:                                                            # per-model rate overrides
+#     databricks-claude-sonnet-4-6: { input: 3.0, output: 15.0, tier: premium }
+#     databricks-claude-haiku-4-5:  { input: 0.8, output: 4.0,  tier: standard }
 
 mail:
   transport: gmail                          # "gmail" (Gmail API) — the supported transport today

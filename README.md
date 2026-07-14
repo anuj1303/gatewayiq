@@ -56,7 +56,7 @@ Prefer to run steps individually? Each is a standalone script (`render_config.py
 | `SOURCE_USAGE_TABLE` | (system.serving.endpoint_usage) | override if different |
 | `UC_CATALOG` / `UC_SCHEMA` | ✅ / (gatewayiq) | UC target the loader writes |
 | `CLASSIFIER_MODEL` | (Haiku) | AI use-case classifier |
-| `MODEL_PRICING` | (Claude Sonnet/Haiku demo rates) | JSON: customer models + $/1M-token rates (see below) |
+| `MODEL_PRICING` | (auto-resolved from system.billing; bundled fallback) | Full per-model rate map — see "Model pricing" below |
 | `MAIL_FROM_EMAIL` / `GMAIL_*` | to send | mail sender + secret-scope creds |
 | `IDENTITY_SOURCE` | (directory) | leave as `directory` |
 
@@ -94,21 +94,35 @@ Prefer to run steps individually? Each is a standalone script (`render_config.py
 7. **Verify**: open via SSO → land on My Usage; admins/managers see all tabs;
    Notifications → preview + send-test.
 
-## Model pricing — now config-driven (no SQL editing)
-The loader computes cost from tokens using **`MODEL_PRICING`** (env). It has two
-named tiers + a default; set it to the customer's models and negotiated rates:
-```bash
-export MODEL_PRICING='{
-  "expensive": {"name": "<expensive model id>", "label": "GPT-4o",      "input": 5.0,  "output": 20.0},
-  "cheap":     {"name": "<cheap model id>",     "label": "GPT-4o-mini", "input": 0.15, "output": 0.6},
-  "default":   {"input": 1.0, "output": 5.0}
-}'   # $ per 1M tokens; defaults = Claude Sonnet/Haiku
-```
-`load_from_gateway.py` swaps the model names + rates throughout the ETL, and the
-`label`s flow through the **UI** (the "Model Choice" chart title + the tier
-columns) and the **recommendation text / emails** — all via `MODEL_PRICING`, no
-SQL or JSX edits needed. Set `MODEL_PRICING` in `app.yaml` too so the app shows
-the right labels.
+## Model pricing — full catalog, region-correct, auto-resolved
+GatewayIQ prices the **entire Unity AI Gateway model catalog** (Claude, Llama,
+DBRX, Mixtral, embeddings, external models, …) — not two hard-coded tiers. The
+loader computes per-request cost from a **full per-model rate map**, and that map
+is populated automatically at install:
+
+1. **`scripts/fetch_pricing.py`** reads the customer's own
+   **`system.billing.list_prices`** (their region's SKU prices, at their
+   negotiated rates — always current) and writes
+   `scripts/gateway_etl/pricing.resolved.json`. `install.sh` runs this first.
+   ```bash
+   python3 scripts/fetch_pricing.py --profile <p> --warehouse <id>   # prints every SKU it finds
+   ```
+2. **`scripts/gateway_etl/model_pricing.json`** is the bundled fallback (approximate
+   published $/1M rates) for any model billing didn't resolve.
+3. **`customer.yaml → model_pricing`** (optional) overrides UI labels, the default
+   rate, or specific models:
+   ```yaml
+   model_pricing:
+     labels: { expensive: "Premium models", cheap: "Standard models" }
+     models:
+       databricks-claude-sonnet-4-6: { input: 3.0, output: 15.0, tier: premium }
+   ```
+
+The loader generates the per-model cost `CASE` across **all** models (unlisted →
+`default` rate), and the premium/standard **tier** aggregates (model-mix, savings)
+span every premium/standard model. Tier `label`s flow through the UI charts,
+columns, and recommendation/email text. No SQL or JSX edits — ever. `render_config`
+writes the resolved map into `app.yaml` so the app shows the right labels too.
 
 ## Other per-customer tuning
 - **Recommendation thresholds** — `app/backend/insights.py` (savings/model-mix/

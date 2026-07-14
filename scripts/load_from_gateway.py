@@ -53,21 +53,84 @@ def run_sql(profile, warehouse, stmt, dry):
     return d
 
 
+_MODEL_COL = r"(?:destination_model|model_requested)"
+# The two demo model names are the tier exemplars in the captured SQL.
+_DEMO_EXPENSIVE, _DEMO_CHEAP = "claude-sonnet-4-6", "claude-haiku-4-5"
+
+
+def _cost_case(pfx, col):
+    """Full per-model cost expression — (input*in_rate + output*out_rate)/1e6 for
+    EVERY configured model, falling back to the default rate. This replaces the
+    demo's two-tier CASE so cost is correct across the whole Gateway catalog."""
+    lines = [f"CASE {pfx}{col}"]
+    for name, m in cfg.MODEL_RATES.items():
+        lines.append(f"      WHEN '{name}' THEN ({pfx}input_tokens * {m.get('input', 0)} "
+                     f"+ {pfx}output_tokens * {m.get('output', 0)}) / 1000000.0")
+    d = cfg.DEFAULT_RATE
+    lines.append(f"      ELSE ({pfx}input_tokens * {d.get('input', 1.0)} "
+                 f"+ {pfx}output_tokens * {d.get('output', 5.0)}) / 1000000.0")
+    lines.append("    END")
+    return "\n".join(lines)
+
+
+def _match_end(sql, start):
+    """Index just past the END that closes the CASE beginning at `start` (depth-aware)."""
+    depth = 0
+    for m in re.finditer(r"\bCASE\b|\bEND\b", sql[start:], re.I):
+        depth += 1 if m.group(0).upper() == "CASE" else -1
+        if depth == 0:
+            return start + m.end()
+    return -1
+
+
+def _rewrite_block(block, pfx, col, prem, std):
+    """Rebuild one model-based CASE block using the full per-model pricing map."""
+    is_searched = re.match(r"CASE\s+WHEN\b", block, re.I) is not None
+    model_whens = re.findall(r"WHEN\b[^']*'([^']+)'", block)   # model literals per WHEN
+    is_cost = "input_tokens" in block
+    # Simple CASE, or a searched CASE with >=2 model arms → total cost (all models).
+    if (not is_searched) or len(model_whens) >= 2:
+        return _cost_case(pfx, col)
+    # Single-arm searched CASE → a tier aggregate (premium vs standard).
+    model = model_whens[0] if model_whens else _DEMO_EXPENSIVE
+    tier = prem if model == _DEMO_EXPENSIVE else std
+    tier_list = ", ".join(f"'{n}'" for n in (tier or [model]))
+    then = _cost_case(pfx, col) if is_cost else "1"
+    return f"CASE WHEN {pfx}{col} IN ({tier_list}) THEN {then} ELSE 0 END"
+
+
 def _reprice(sql):
-    """Swap the demo model names + per-model token rates for the configured
-    MODEL_PRICING (customer models/rates) — no SQL editing needed."""
-    p = cfg.MODEL_PRICING
-    exp, ch, dft = p["expensive"], p["cheap"], p["default"]
-    sql = sql.replace("'claude-sonnet-4-6'", f"'{exp['name']}'").replace("'claude-haiku-4-5'", f"'{ch['name']}'")
-    # (token_col * rate) — literal uniquely identifies the tier; 15.0 before 5.0.
-    reps = [(r"(input_tokens\s*\*\s*)3\.0\b", exp["input"]),
-            (r"(output_tokens\s*\*\s*)15\.0\b", exp["output"]),
-            (r"(input_tokens\s*\*\s*)0\.80?\b", ch["input"]),
-            (r"(output_tokens\s*\*\s*)4\.0\b", ch["output"]),
-            (r"(input_tokens\s*\*\s*)1\.0\b", dft["input"]),
-            (r"(output_tokens\s*\*\s*)5\.0\b", dft["output"])]
-    for pat, val in reps:
-        sql = re.sub(pat, lambda m, v=val: f"{m.group(1)}{v}", sql)
+    """Replace the demo's two-tier pricing SQL with the configured full per-model
+    map (any number of models). Total-cost CASEs are priced per model across the
+    whole catalog; the premium/standard tier aggregates (model-mix, savings) now
+    span ALL premium / standard models. No SQL editing needed per customer."""
+    prem = cfg.PREMIUM_MODELS or list(cfg.MODEL_RATES.keys()) or [_DEMO_EXPENSIVE]
+    std = cfg.STANDARD_MODELS or list(cfg.MODEL_RATES.keys()) or [_DEMO_CHEAP]
+    all_m = list(cfg.MODEL_RATES.keys()) or [_DEMO_EXPENSIVE, _DEMO_CHEAP]
+
+    header = re.compile(r"CASE\s+(?:WHEN\s+)?((?:\w+\.)?)" + _MODEL_COL + r"\b", re.I)
+    out, pos = [], 0
+    m = header.search(sql)
+    while m:
+        start = m.start()
+        end = _match_end(sql, start)
+        if end < 0:
+            break
+        block = sql[start:end]
+        col = re.search(_MODEL_COL, block, re.I).group(0)
+        out.append(sql[pos:start])
+        out.append(_rewrite_block(block, m.group(1), col, prem, std))
+        pos = end
+        m = header.search(sql, pos)
+    out.append(sql[pos:])
+    sql = "".join(out)
+
+    # Dev-vs-prod model-mix membership filter → all configured models.
+    all_list = ", ".join(f"'{n}'" for n in all_m)
+    sql = re.sub(r"IN\s*\(\s*'claude-sonnet-4-6'\s*,\s*'claude-haiku-4-5'\s*\)",
+                 f"IN ({all_list})", sql)
+    # Safety: map any stray demo model name to a real configured model.
+    sql = sql.replace(f"'{_DEMO_EXPENSIVE}'", f"'{prem[0]}'").replace(f"'{_DEMO_CHEAP}'", f"'{std[0]}'")
     return sql
 
 

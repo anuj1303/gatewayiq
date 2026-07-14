@@ -13,8 +13,49 @@ import yaml
 ROOT = os.path.join(os.path.dirname(__file__), "..")
 
 
+def resolve_pricing(c):
+    """Build the canonical full per-model pricing map used by BOTH the app and the
+    loader. Base = the region-resolved map from fetch_pricing (pricing.resolved.json)
+    if present, else the bundled fallback (model_pricing.json). `customer.yaml`'s
+    optional `model_pricing` block is merged on top as a manual override (UI labels,
+    per-model rates, or the legacy expensive/cheap tiers)."""
+    base = None
+    for fn in ("pricing.resolved.json", "model_pricing.json"):
+        p = os.path.join(ROOT, "scripts", "gateway_etl", fn)
+        if os.path.exists(p):
+            base = json.load(open(p))
+            break
+    base = base or {"models": {}, "default": {"input": 1.0, "output": 5.0}, "ui": {}}
+    models = dict(base.get("models") or {})
+    default = dict(base.get("default") or {"input": 1.0, "output": 5.0})
+    ui = dict(base.get("ui") or {})
+
+    ov = c.get("model_pricing") or {}
+    labels = ov.get("labels") or {}
+    if labels.get("expensive"):
+        ui["expensive_label"] = labels["expensive"]
+    if labels.get("cheap"):
+        ui["cheap_label"] = labels["cheap"]
+    # Legacy expensive/cheap tier shape → labels + a model entry each.
+    for tk, tier in (("expensive", "premium"), ("cheap", "standard")):
+        t = ov.get(tk)
+        if isinstance(t, dict):
+            if t.get("label"):
+                ui[f"{tk}_label"] = t["label"]
+            if t.get("name"):
+                models[t["name"]] = {"input": t.get("input", 1.0), "output": t.get("output", 5.0), "tier": tier}
+    # Explicit per-model overrides win.
+    for nm, r in (ov.get("models") or {}).items():
+        models[nm] = {**models.get(nm, {}), **r}
+    if isinstance(ov.get("default"), dict):
+        default.update(ov["default"])
+    ui.setdefault("expensive_label", "Premium models")
+    ui.setdefault("cheap_label", "Standard models")
+    return {"models": models, "default": default, "ui": ui}
+
+
 def render_app_yaml(c):
-    mp = json.dumps(c["model_pricing"], separators=(",", ":"))
+    mp = json.dumps(resolve_pricing(c), separators=(",", ":"))
     env = {
         "PGHOST": c["lakebase"]["host"], "PGDATABASE": c["lakebase"]["database"],
         "PGPORT": "5432", "PGSSLMODE": "require", "APP_SP_ROLE": c["lakebase"]["app_sp"],
