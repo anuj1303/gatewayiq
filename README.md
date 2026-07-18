@@ -1,5 +1,10 @@
 # GatewayIQ — Production Deployment
 
+> 🚀 **New to this / not technical?** Start with **[GET_STARTED.md](GET_STARTED.md)** —
+> a plain-English, baby-steps walkthrough (installs the tools, logs you in, fills in
+> the config, runs the installer, opens the dashboard) with a jargon glossary and a
+> troubleshooting table. This README below is the terser, engineer-oriented version.
+
 A role-based governance console for **Unity AI Gateway** (Databricks App: FastAPI +
 React, backed by Lakebase + Unity Catalog). This is the **clean, config-only**
 codebase for customer environments — **no demo data, identities, or values**.

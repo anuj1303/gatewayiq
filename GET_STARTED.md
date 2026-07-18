@@ -1,0 +1,278 @@
+# GatewayIQ — Get Started (Plain-English, Step-by-Step)
+
+This guide is written for **someone with no technical background**. If you can
+copy, paste, and fill in blanks, you can do this. Every term is explained the
+first time it appears. Take it one numbered step at a time — don't skip ahead.
+
+> **What is GatewayIQ?**
+> It's a ready-made web dashboard that shows how your company is using AI
+> (which teams, how much it costs, what's risky, etc.). This guide installs that
+> dashboard into *your own* Databricks account so your people can log in and use it.
+>
+> **How long will this take?** About **45–90 minutes** the first time.
+>
+> **Do I need to write code?** No. You'll copy commands and fill in a few blanks.
+
+---
+
+## Part 0 — Words you'll see (read this once)
+
+You don't need to memorize these — just glance at them, then refer back.
+
+| Word | What it actually means |
+|---|---|
+| **Databricks** | The cloud platform your company uses to store data and run analytics. GatewayIQ installs *inside* it. |
+| **Workspace** | Your company's private area inside Databricks. It has a web address like `https://something.cloud.databricks.com`. |
+| **Terminal** (or "command line") | A plain text window on your computer where you type commands instead of clicking buttons. On a Mac it's an app called **Terminal**; on Windows it's **Command Prompt** or **PowerShell**. |
+| **Command** | A line of text you paste into the Terminal and press Enter to run. |
+| **CLI** | "Command Line Interface" — a small program you install so your Terminal can talk to Databricks. |
+| **Profile** | A saved login for the CLI, so you don't type your password every time. You give it a nickname (e.g. `myprofile`). |
+| **Warehouse** | The engine inside Databricks that runs the data queries. You just need its ID (a string of letters/numbers). |
+| **Lakebase** | A fast database inside Databricks that the dashboard reads from. The installer creates it for you. |
+| **Service Principal (SP)** | A "robot user" — an identity the app logs in as (instead of a person). Your Databricks admin creates one. |
+| **Secret scope** | A locked box inside Databricks for passwords/keys, so they're never written in plain files. |
+| **YAML** | A simple text file format for settings. You'll edit one file (`customer.yaml`); it's just `name: value` lines. |
+| **Repo / repository** | This folder of files (the GatewayIQ code) — the thing you're reading right now. |
+
+---
+
+## Part 1 — Before you start (the checklist)
+
+You need a few things ready. **If you don't have these, ask your Databricks
+administrator** — they'll know exactly what these mean. Don't try to create them
+yourself unless you're the admin.
+
+Tick each box before moving on:
+
+- [ ] **A Databricks workspace** you can log into (the web address + your login).
+- [ ] **Admin help available.** Some steps need an admin. Line them up in advance.
+- [ ] **AI Gateway logging is turned ON.** This is what produces the data the
+      dashboard shows. Ask your admin: *"Is Unity AI Gateway usage tracking and
+      inference (payload) logging enabled, and are system tables on?"* If they say
+      no, they need to turn it on first — **stop here until they do.**
+- [ ] **A SQL Warehouse exists** (ask the admin for its **ID**).
+- [ ] **A Lakebase instance exists** (ask the admin for its **name** and **host**).
+- [ ] **A Service Principal for the app** (ask the admin for its **client id** —
+      a long code like `1111-2222-3333`).
+- [ ] **An org directory table** — a table listing your people (email, team,
+      manager, job title). Ask the admin for its full name, e.g.
+      `hr.people.directory`.
+- [ ] *(Optional, only if you want the weekly email feature)* Gmail sending set up.
+      You can skip this and add it later.
+
+> 💡 **Tip:** Copy all the answers above into a notes file (Apple Notes, Notepad,
+> anything). You'll paste them into one config file in Part 4.
+
+---
+
+## Part 2 — Install the two tools you need
+
+You need two free programs on your computer: **Python** and the **Databricks CLI**.
+
+### 2a. Open your Terminal
+- **Mac:** Press `Cmd + Space`, type `Terminal`, press Enter.
+- **Windows:** Press the Start button, type `PowerShell`, press Enter.
+
+A window with text and a blinking cursor opens. This is where you'll paste commands.
+
+### 2b. Check if Python is already installed
+Paste this and press Enter:
+```bash
+python3 --version
+```
+- If you see something like `Python 3.11.x` → ✅ you have it, skip to 2c.
+- If you see an error → download Python from **https://www.python.org/downloads/**,
+  run the installer, click "Next" through it (on Windows, **check the box that says
+  "Add Python to PATH"**), then close and reopen your Terminal and try the command
+  again.
+
+### 2c. Install the Databricks CLI
+Paste this and press Enter (this installs the tool that talks to Databricks):
+```bash
+pip3 install databricks-cli pyyaml
+```
+Wait for it to finish (a minute or two). Then confirm it worked:
+```bash
+databricks --version
+```
+If you see a version number, ✅ you're good.
+
+---
+
+## Part 3 — Connect the CLI to your Databricks (log in once)
+
+This saves your Databricks login under a nickname (a "profile") so the installer
+can do its work. Pick any nickname — this guide uses **`myprofile`**.
+
+Paste this, replacing the web address with **your** workspace's address:
+```bash
+databricks configure --token --profile myprofile --host https://YOUR-WORKSPACE.cloud.databricks.com
+```
+
+It will ask for a **token** (a temporary password). To get one:
+1. Open your Databricks workspace in a web browser and log in.
+2. Click your **name/photo** in the top-right → **Settings**.
+3. Go to **Developer** → **Access tokens** → **Generate new token**.
+4. Give it a name (e.g. "gatewayiq install"), click Generate, and **copy** the
+   long code it shows. (You won't see it again, so copy it now.)
+5. Go back to your Terminal, **paste** the code, and press Enter.
+
+Test that it worked:
+```bash
+databricks current-user me --profile myprofile
+```
+If it prints your name/email, ✅ you're connected.
+
+---
+
+## Part 4 — Fill in your settings (the one file you edit)
+
+Everything the installer needs lives in **one file**. You make your own copy of a
+template, then fill in the blanks with the answers from your Part 1 notes.
+
+### 4a. Go into the GatewayIQ folder
+In the Terminal, type `cd ` (with a space), then **drag the GatewayIQ folder from
+your file explorer into the Terminal window** (this pastes its location), then press
+Enter. It looks like:
+```bash
+cd /Users/you/Desktop/CustomerDemos/gatewayiq-deploy
+```
+
+### 4b. Make your own copy of the settings template
+```bash
+cp customer.yaml.example customer.yaml
+```
+This creates `customer.yaml` — **this is the file you edit.** (Never edit the
+`.example` one; it's the blank master.)
+
+### 4c. Open `customer.yaml` in a text editor
+- **Mac:** `open -e customer.yaml`
+- **Windows:** `notepad customer.yaml`
+
+You'll see lines like `name: value` with `#` comments explaining each one. Replace
+the example values (they mention a fake company "Acme") with **your** values from
+your Part 1 notes. The important ones:
+
+| Line in the file | What to put |
+|---|---|
+| `profile:` | your nickname from Part 3 → `myprofile` |
+| `warehouse_id:` | the Warehouse ID from your admin |
+| `lakebase: instance / host` | the Lakebase name and host from your admin |
+| `lakebase: admin_user` | **your own** Databricks login email |
+| `lakebase: app_sp` | the Service Principal client id from your admin |
+| `uc: catalog` | where the data tables get created (ask admin, or use the example) |
+| `sources: inference_table` | the AI Gateway logging table from your admin |
+| `sources: directory_table` | your org directory table |
+| `sources: dir_*_col` | the column names inside that directory table |
+| `identity: email_domain` | your company email domain, e.g. `acme.com` |
+| `identity: admins` | the emails of people who should see **everything** (usually you) |
+| `app: url` | leave the example for now; you can update it after first deploy |
+
+**Save the file** (Mac: `Cmd+S`; Windows: File → Save) and close the editor.
+
+> 💡 Don't worry about the `model_pricing` block — leave it commented out. The
+> installer figures out AI pricing automatically.
+
+---
+
+## Part 5 — Create the "locked box" for email keys (optional)
+
+**Skip this whole part if you don't want the weekly-email feature yet** — the
+dashboard works fine without it, and you can add it later.
+
+If you *do* want emails, you need a "secret scope" (the locked box) named
+`gatewayiq`. Your admin (or you, if you have the Gmail keys) runs:
+```bash
+databricks secrets create-scope gatewayiq --profile myprofile
+databricks secrets put-secret gatewayiq google-client-id --profile myprofile
+databricks secrets put-secret gatewayiq google-client-secret --profile myprofile
+databricks secrets put-secret gatewayiq google-refresh-token --profile myprofile
+```
+Each `put-secret` opens a little editor — paste the matching key, save, close.
+(Where do these Gmail keys come from? That's a separate Google setup — ask whoever
+manages your company's Google/Gmail, or skip email for now.)
+
+---
+
+## Part 6 — Run the installer (the big moment)
+
+This one command does everything: it sets up the app, creates the database, loads
+your data, and figures out AI pricing. Make sure you're still inside the
+GatewayIQ folder (from step 4a), then paste:
+
+```bash
+./install.sh customer.yaml
+```
+
+Press Enter and **wait**. It prints its progress in 4 steps:
+1. `resolve per-model pricing…` — works out AI costs from your billing.
+2. `render app.yaml…` — turns your settings into the app's config.
+3. `databricks bundle deploy…` — installs the app and its database into Databricks.
+4. `data-plane install…` — loads your data and sets up who-can-see-what.
+
+This can take several minutes. When it finishes you'll see:
+```
+✅ GatewayIQ installed. Open the app (SSO); Notifications → send a test; resume the weekly Job when ready.
+```
+
+> **If it stops with a red error:** don't panic. Copy the **last 15–20 lines** of
+> text and see Part 8 (Troubleshooting), or send them to whoever set this up. The
+> installer is **safe to run again** — fix the one setting it complained about in
+> `customer.yaml` and re-run `./install.sh customer.yaml`. It won't create
+> duplicates.
+
+---
+
+## Part 7 — Open your dashboard and check it works
+
+1. In your Databricks workspace (web browser), click **Compute** → **Apps** in the
+   left menu (wording may vary slightly). You'll see an app named **gatewayiq**.
+2. Click it, then click the **URL / "Open app"** link. It opens in a new tab.
+3. It logs you in automatically with your Databricks account (this is "SSO" —
+   single sign-on, no separate password).
+4. What you should see:
+   - You land on a **My Usage** page.
+   - Because you listed yourself as an **admin** in `customer.yaml`, you'll see
+     **all the tabs** across the top (Executive Overview, Users & Teams, Anomaly
+     Detection, and so on).
+   - Charts and numbers fill in. 🎉 **You're done.**
+
+If you set up email (Part 5), open the **Notifications** tab → **Send test to
+myself** to confirm email delivery.
+
+> **Turning on the weekly email (later, when you're ready):** the installer created
+> a weekly email job but left it **paused** and in **test mode** (all mail goes to
+> one test address) so it can't accidentally email your whole company. When you're
+> confident, ask your admin to flip `test_mode` to `false` and un-pause the job.
+
+---
+
+## Part 8 — If something goes wrong (Troubleshooting)
+
+| What you see | What it usually means | What to do |
+|---|---|---|
+| `command not found: databricks` | The CLI didn't install, or Terminal needs restarting. | Close and reopen Terminal; redo Part 2c. |
+| `config not found: customer.yaml` | You're not in the right folder, or didn't copy the template. | Redo steps 4a and 4b. |
+| Error mentioning **profile** or **401 / unauthorized** | Your login token expired or the profile name is wrong. | Redo Part 3 (get a fresh token); check `profile:` in `customer.yaml` matches. |
+| Error mentioning **warehouse** | Wrong or missing Warehouse ID. | Double-check `warehouse_id:` with your admin. |
+| Error mentioning **permission / CREATE / role** | Your login can't create something; an admin needs to grant access. | Send the error to your Databricks admin. |
+| Error mentioning a **table** or **schema** not found | A source table name is wrong. | Re-check the `sources:` lines with your admin. |
+| The app opens but is **empty / no charts** | Data didn't load, or logging wasn't on. | Confirm AI Gateway logging is ON (Part 1), then re-run `./install.sh customer.yaml`. |
+
+**Golden rule:** the installer is *idempotent* — a fancy word meaning **you can
+safely run it as many times as you want**. Fix one thing, run it again. Nothing
+breaks from re-running.
+
+---
+
+## Part 9 — Where to get more detail
+
+- `README.md` — the same process written for engineers (more technical, terser).
+- The `# comments` inside `customer.yaml.example` — explain every single setting.
+- Your Databricks admin — the right person for anything about accounts,
+  permissions, warehouses, or service principals.
+
+---
+
+*You did it. If you got stuck on a specific step, note the step number — that makes
+it much faster for anyone to help you.*
