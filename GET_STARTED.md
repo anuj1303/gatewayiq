@@ -166,6 +166,7 @@ your Part 1 notes. The important ones:
 | `sources: dir_*_col` | the column names inside that directory table |
 | `identity: email_domain` | your company email domain, e.g. `acme.com` |
 | `identity: admins` | the emails of people who should see **everything** (usually you) |
+| `identity: managers` | the emails of people who can **create and manage teams** — each gets a "Manage Users" tab to add/remove people. Leave empty to auto-detect from the directory instead. |
 | `app: url` | leave the example for now; you can update it after first deploy |
 
 **Save the file** (Mac: `Cmd+S`; Windows: File → Save) and close the editor.

@@ -177,7 +177,15 @@ def is_admin(email):
 
 
 def can_manage(membership, email):
-    """Who may edit a group: real managers/directors (not the read-all admin)."""
+    """Who may create/manage a team.
+
+    Config-authoritative: if `MANAGER_EMAILS` is set, ONLY those emails may
+    manage (the read-all admin never edits groups). If it's empty, fall back to
+    directory-derived managers — a listed role_type or anyone with direct
+    reports — so behaviour is unchanged when no manager list is configured."""
+    email = (email or "").lower()
+    if cfg.MANAGER_EMAILS:
+        return email in cfg.MANAGER_EMAILS
     p = person(email)
     if p and p["role_type"] in _MGR_TYPES:
         return True
@@ -187,6 +195,16 @@ def can_manage(membership, email):
 def is_manager(membership, email):
     """Whether the caller gets a team/all view (vs a self view)."""
     return is_admin(email) or can_manage(membership, email)
+
+
+def _manages_a_team(membership, email):
+    """True if this person heads a selectable team org — config manager list
+    when set, else a manager/director role_type or someone with reports."""
+    email = (email or "").lower()
+    if cfg.MANAGER_EMAILS:
+        return email in cfg.MANAGER_EMAILS
+    p = person(email)
+    return bool((p and p["role_type"] in _MGR_TYPES) or direct_reports(membership, email))
 
 
 def scope_emails(membership, email):
@@ -249,7 +267,7 @@ def team_scopes(membership, caller_email):
         out.append({"key": "ALL", "label": "All users", "count": len(visible)})
     for e in sorted(visible):
         p = person(e)
-        if p and p["role_type"] in _MGR_TYPES:                 # a manager/director org
+        if p and _manages_a_team(membership, e):               # a manager org
             org = scope_emails(membership, e) & visible
             out.append({"key": e, "label": p["team"], "count": len(org)})
     return out

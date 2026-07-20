@@ -75,11 +75,15 @@ def main():
                        "title": role, "dept": dept, "role": role.lower().replace(" ", "_"),
                        "manager": mgr, "team": team})
 
-    managers = {p["manager"] for p in people if p["manager"]}
+    # A person is a manager if they're in the config MANAGER_EMAILS list
+    # (authoritative when set) or, when that list is empty, if they appear as
+    # someone's manager in the directory.
+    dir_managers = {p["manager"] for p in people if p["manager"]}
+    cfg_managers = set(cfg.MANAGER_EMAILS)
     for p in people:
         if p["email"] in cfg.ADMIN_EMAILS:
             p["role_type"] = "admin"
-        elif p["email"] in managers:
+        elif (p["email"] in cfg_managers) if cfg_managers else (p["email"] in dir_managers):
             p["role_type"] = "manager"
         else:
             p["role_type"] = "ic"
@@ -90,6 +94,15 @@ def main():
         if a not in known:
             people.append({"email": a, "handle": a.split("@")[0], "name": "Admin", "title": "Administrator",
                            "dept": "", "role": "administrator", "role_type": "admin", "manager": None, "team": "All Teams"})
+            known.add(a)
+    # config managers not present in the directory → add them so they can sign
+    # in and manage a team (their team starts empty; they add members in-app)
+    for m in cfg_managers:
+        if m not in known and m not in cfg.ADMIN_EMAILS:
+            nm = m.split("@")[0].replace(".", " ").title()
+            people.append({"email": m, "handle": m.split("@")[0], "name": nm, "title": "Manager",
+                           "dept": "", "role": "manager", "role_type": "manager", "manager": None, "team": nm + "'s Team"})
+            known.add(m)
 
     print(f"directory: {len(people)} users "
           f"({sum(1 for p in people if p['role_type']=='manager')} managers, "

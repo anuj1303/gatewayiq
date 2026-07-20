@@ -37,6 +37,14 @@ identity:
   admins:                           # users who get the full admin (all-users) view
     - ai-governance-admin@acme.com
     - platform-lead@acme.com
+  managers:                         # ONLY these users can create & manage teams
+    # Every manager below gets the manager view + a "Manage Users" tab where they
+    # add/remove people (by email) from their team. Everyone NOT listed here (and
+    # not an admin) is an individual contributor — personal view only.
+    # Leave this list empty to instead auto-detect managers from the directory's
+    # reporting lines (anyone who has direct reports).
+    - engineering-manager@acme.com
+    - data-science-lead@acme.com
 
 app:
   url: https://gatewayiq-1234567890.aws.databricksapps.com  # deployed app URL (used in email links)

@@ -64,7 +64,15 @@ async function _groupEdit(path, email) {
     headers: { ...h(), 'Content-Type': 'application/json' },
     body: JSON.stringify({ email }),
   })
-  if (!r.ok) throw new Error('Team update failed')
+  if (!r.ok) {
+    let detail = ''
+    try { detail = (await r.json()).detail } catch {}
+    const msg = {
+      'bad-target': 'That email isn’t a recognized user in your directory. You can only add people who exist in the org directory.',
+      'not-a-manager': 'You don’t have permission to manage teams.',
+    }[detail] || 'Team update failed. Please try again.'
+    throw new Error(msg)
+  }
   return r.json()
 }
 export const addMember = (email) => _groupEdit('/api/group/add', email)

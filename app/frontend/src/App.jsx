@@ -1,10 +1,10 @@
 import React, { useEffect, useState } from 'react'
 import { Activity, LayoutDashboard, Users, ShieldAlert, ShieldCheck, Rocket,
          Users2, LogOut, RefreshCw, UserCog, Cloud, TrendingUp, UserCircle, Mail } from 'lucide-react'
+import ManageUsers from './tabs/ManageUsers.jsx'
 import { fetchBundle, fetchMe, setIdentity } from './api'
 import { Spinner } from './components/ui.jsx'
 import Login, { initials } from './components/Login.jsx'
-import TeamManagement from './components/TeamManagement.jsx'
 import ExecutiveOverview from './tabs/ExecutiveOverview.jsx'
 import UsersTeams from './tabs/UsersTeams.jsx'
 import AnomalyDetection from './tabs/AnomalyDetection.jsx'
@@ -27,6 +27,7 @@ const TABS = [
   { id: 'enforce', label: 'AI Gateway Enforcement', icon: ShieldCheck, C: Enforcement, mgr: true },
   { id: 'devprod', label: 'Developer Productivity', icon: Rocket, C: DeveloperProductivity, mgr: true },
   { id: 'notifs', label: 'Notifications', icon: Mail, C: Notifications, mgr: true },
+  { id: 'manage', label: 'Manage Users', icon: UserCog, C: ManageUsers, manage: true },
 ]
 
 export default function App() {
@@ -35,7 +36,6 @@ export default function App() {
   const [data, setData] = useState(null)
   const [err, setErr] = useState(null)
   const [forcePick, setForcePick] = useState(false)
-  const [showTeam, setShowTeam] = useState(false)
   const [tick, setTick] = useState(0)
 
   useEffect(() => {
@@ -54,6 +54,9 @@ export default function App() {
   }, [tick])
 
   const reload = () => setTick((t) => t + 1)
+  // Refetch the scoped data bundle only (no remount) — used after a team edit so
+  // dashboards rescope while the Manage Users tab keeps its state.
+  const refreshData = () => fetchBundle().then(setData).catch((e) => setErr(e.message))
   const pick = (email) => { setIdentity(email); setForcePick(false); reload() }
   const signOut = () => { setIdentity(''); setForcePick(true); setMe(null); reload() }
 
@@ -68,7 +71,9 @@ export default function App() {
   const mgr = p.is_manager
   const admin = p.is_admin
   const roleLabel = admin ? 'Admin' : p.role_type === 'director' ? 'Director' : mgr ? 'Manager' : 'Individual'
-  const visibleTabs = TABS.filter((t) => !t.mgr || mgr)   // manager/admin-only tabs (e.g. Notifications)
+  // Tab gating: `mgr` tabs need the team/all view (managers + admin); `manage`
+  // tabs need edit rights (managers only — the read-all admin doesn't manage).
+  const visibleTabs = TABS.filter((t) => (!t.mgr || mgr) && (!t.manage || p.can_manage))
   const Active = visibleTabs.find((t) => t.id === active) || visibleTabs[0]
 
   return (
@@ -100,8 +105,8 @@ export default function App() {
           </div>
           <div className="identity-actions">
             {p.can_manage && (
-              <button className="btn-ghost" onClick={() => setShowTeam(true)} title="Manage team members">
-                <UserCog size={15} /> Manage team
+              <button className="btn-ghost" onClick={() => setActive('manage')} title="Add or remove team members">
+                <UserCog size={15} /> Manage users
               </button>
             )}
             <button className="icon-btn" onClick={reload} title="Refresh"><RefreshCw size={15} /></button>
@@ -136,13 +141,10 @@ export default function App() {
         <Spinner label="Loading governance data…" />
       ) : (
         <main className="page fade-in" key={active + tick}>
-          <Active.C data={data} persona={p} />
+          <Active.C data={data} persona={p} onChanged={refreshData} />
         </main>
       )}
 
-      {showTeam && (
-        <TeamManagement onClose={() => setShowTeam(false)} onChanged={reload} />
-      )}
     </div>
   )
 }

@@ -357,3 +357,9 @@ td.clip { max-width: 340px; white-space: normal; overflow-wrap: anywhere; word-b
 .member-row { display: flex; align-items: center; gap: 11px; padding: 8px 11px; border-radius: 10px;
   background: var(--panel-3); border: 1px solid var(--border); }
 .member-row .btn-ghost { margin-left: auto; padding: 5px 10px; font-size: 12px; }
+
+/* Manage Users tab */
+.add-email-row { display: flex; align-items: stretch; gap: 10px; }
+.add-email-row .login-search { margin-bottom: 0; }
+.banner-ok { padding: 9px 12px; border-radius: 9px; font-size: 12.5px;
+  background: rgba(87,217,138,0.10); border: 1px solid rgba(87,217,138,0.32); color: #8ce8b0; }

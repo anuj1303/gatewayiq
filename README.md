@@ -21,6 +21,7 @@ Unity AI Gateway logs + system tables            (real source)
 - **Auth is workspace SSO** — the app reads `X-Forwarded-Email`; identity/teams
   come from the customer directory. No passwords are stored.
 - **Scoping**: admin → all users, manager → their team (editable), IC → self.
+- **Managers**: exactly the emails in `MANAGER_EMAILS` (config) may create/manage teams — they get a **Manage Users** tab to add/remove people by email (directory members only). Leave the list empty to auto-detect managers from the directory's reporting lines instead.
 
 ## Prerequisites
 1. Unity AI Gateway **usage tracking + inference (payload) logging** enabled on
@@ -56,6 +57,7 @@ Prefer to run steps individually? Each is a standalone script (`render_config.py
 | `APP_URL` | ✅ | Deployed app URL (email links) |
 | `EMAIL_DOMAIN` | ✅ | Customer email domain (handle↔email) |
 | `ADMIN_EMAILS` | ✅ | Comma-separated admin emails |
+| `MANAGER_EMAILS` | (directory) | Comma-separated emails allowed to create & manage teams. Authoritative when set; empty → auto-detect from directory reporting lines |
 | `SOURCE_INFERENCE_TABLE` | ✅ | AI Gateway inference (payload) table |
 | `SOURCE_DIRECTORY_TABLE` | ✅ | email/team/dept/role/manager |
 | `SOURCE_USAGE_TABLE` | (system.serving.endpoint_usage) | override if different |

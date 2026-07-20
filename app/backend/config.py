@@ -116,6 +116,11 @@ UC_SCHEMA = _env("UC_SCHEMA", "gatewayiq")
 # SOURCE_DIRECTORY_TABLE by scripts/seed_identity.py, and auth is workspace SSO.
 IDENTITY_SOURCE = _env("IDENTITY_SOURCE", "directory")
 ADMIN_EMAILS = [e.strip().lower() for e in _env("ADMIN_EMAILS").split(",") if e.strip()]
+# Managers — the ONLY users allowed to create and manage teams. Authoritative
+# when set: exactly these emails get team-management rights (the "Manage Users"
+# tab + /api/group* writes), regardless of directory reporting lines. Leave
+# empty to fall back to directory-derived managers (anyone with direct reports).
+MANAGER_EMAILS = [e.strip().lower() for e in _env("MANAGER_EMAILS").split(",") if e.strip()]
 
 # Values that must be set for a working deployment.
 REQUIRED = ["PGHOST", "APP_SP_ROLE", "APP_URL", "EMAIL_DOMAIN",
