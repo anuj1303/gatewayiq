@@ -12,10 +12,11 @@ an IC sees only themselves, the admin sees everyone — see membership.py/scope.
   POST /api/login          → email/password sign-in
   GET  /api/bundle         → all small datasets, scoped, one payload
   GET  /api/data/{name}    → one large lazy dataset, scoped
-  GET/POST /api/group[...]  → a manager's team membership (view / add / remove)
+  GET/POST /api/users[...]  → user administration (list / save / remove)
 Anomaly-type / date filtering is done client-side in the SPA.
 """
 import os
+import re
 import time
 import logging
 import threading
@@ -206,6 +207,7 @@ def _ensure_auth():
         try:
             # Seed (best-effort) then read the authoritative Lakebase copy.
             mb.ensure_schema(conn, seed_users=SEED_USERS, seed_creds=CREDENTIALS)
+            _bootstrap_admins(conn)   # ensure config admins/managers can sign in
             users = mb.load_users(conn) or list(SEED_USERS)      # fallback to roster seed
             mb.set_directory(users)
             _creds.clear()
@@ -215,6 +217,27 @@ def _ensure_auth():
         finally:
             conn.close()
         _auth_ready = True
+
+
+def _bootstrap_admins(conn):
+    """Ensure the config-declared admins (and managers) exist as users so someone
+    can sign in and run the Manage Users console on a fresh install. Idempotent:
+    only inserts people who aren't already in app_users (never downgrades a role
+    an admin later changed in-app)."""
+    try:
+        existing = {u["email"] for u in mb.load_users(conn)}
+    except Exception:
+        existing = set()
+    seeds = ([(e, "admin") for e in cfg.ADMIN_EMAILS] +
+             [(e, "manager") for e in cfg.MANAGER_EMAILS if e not in cfg.ADMIN_EMAILS])
+    for email, role_type in seeds:
+        if email in existing:
+            continue
+        name = email.split("@")[0].replace(".", " ").title()
+        try:
+            mb.upsert_user(conn, email=email, name=name, role_type=role_type)
+        except Exception as e:
+            logger.warning("bootstrap %s skipped (%s)", email, str(e)[:80])
 
 
 def _reload_members():
@@ -227,6 +250,22 @@ def _reload_members():
         _members.clear()
         _members.update(m)
     _scoped.clear()  # membership changed → scoped bundles are stale
+
+
+def _reload_directory():
+    """Reload users AND membership after a Manage Users write (roles/managers
+    may have changed, not just group membership)."""
+    conn = _fresh_conn()
+    try:
+        users = mb.load_users(conn)
+        m = mb.load_membership(conn)
+    finally:
+        conn.close()
+    with _auth_lock:
+        mb.set_directory(users)
+        _members.clear()
+        _members.update(m)
+    _scoped.clear()
 
 
 # ---- Identity resolution ---------------------------------------------------
@@ -343,50 +382,74 @@ def dataset(request: Request, name: str):
     return JSONResponse({"name": name, "columns": cols, "rows": rows})
 
 
-# ---- Team management (managers only) ---------------------------------------
-@app.get("/api/group")
-def group(request: Request):
+# ---- User administration (Manage Users console — admins & managers) --------
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+@app.get("/api/users")
+def users_list(request: Request):
     email = _require_identity(request)
     if not mb.can_manage(_members, email):
         raise HTTPException(status_code=403, detail="not-a-manager")
-    return mb.group_view(_members, email)
+    return mb.users_view(_members, email)
 
 
-@app.post("/api/group/add")
-def group_add(request: Request, payload: dict = Body(...)):
+@app.post("/api/users/save")
+def users_save(request: Request, payload: dict = Body(...)):
+    """Create or update a user (Name / Email / Manager / Role). Admins & managers
+    may add any role, including Admin. A manager can only assign people under a
+    manager who is within their own view."""
     email = _require_identity(request)
     if not mb.can_manage(_members, email):
         raise HTTPException(status_code=403, detail="not-a-manager")
-    target = (payload.get("email") or "").lower()
-    tp = mb.person(target)
-    if not tp or tp["role_type"] == "admin" or target == email:
-        raise HTTPException(status_code=400, detail="bad-target")
+    tgt = (payload.get("email") or "").strip().lower()
+    name = (payload.get("name") or "").strip()
+    role_type = (payload.get("role_type") or "ic").strip().lower()
+    manager = (payload.get("manager") or "").strip().lower() or None
+    if not _EMAIL_RE.match(tgt):
+        raise HTTPException(status_code=400, detail="bad-email")
+    if not name:
+        raise HTTPException(status_code=400, detail="missing-name")
+    if role_type not in mb.ROLE_TYPES:
+        raise HTTPException(status_code=400, detail="bad-role")
+    # Managers may only place users under a manager they can see (admins: anyone).
+    if manager and not mb.is_admin(email):
+        _, visible = mb.visible_handles_and_emails(_members, email)
+        if manager not in visible:
+            raise HTTPException(status_code=400, detail="manager-out-of-scope")
+    if role_type == "ic" and not manager:
+        raise HTTPException(status_code=400, detail="user-needs-manager")
     conn = _fresh_conn()
     try:
-        mb.set_owner(conn, target, email)
+        mb.upsert_user(conn, email=tgt, name=name, role_type=role_type, manager=manager)
     finally:
         conn.close()
-    _reload_members()
-    return mb.group_view(_members, email)
+    _reload_directory()
+    return mb.users_view(_members, email)
 
 
-@app.post("/api/group/remove")
-def group_remove(request: Request, payload: dict = Body(...)):
+@app.post("/api/users/remove")
+def users_remove(request: Request, payload: dict = Body(...)):
     email = _require_identity(request)
     if not mb.can_manage(_members, email):
         raise HTTPException(status_code=403, detail="not-a-manager")
-    target = (payload.get("email") or "").lower()
-    tp = mb.person(target)
-    if not tp or tp["role_type"] == "admin" or target == email:
+    tgt = (payload.get("email") or "").strip().lower()
+    if not mb.person(tgt):
         raise HTTPException(status_code=400, detail="bad-target")
-    # Removing a member returns them to their real reporting manager's group.
+    if tgt == email:
+        raise HTTPException(status_code=400, detail="cannot-remove-self")
+    # A manager can only remove users within their own view.
+    if not mb.is_admin(email):
+        _, visible = mb.visible_handles_and_emails(_members, email)
+        if tgt not in visible:
+            raise HTTPException(status_code=403, detail="out-of-scope")
     conn = _fresh_conn()
     try:
-        mb.set_owner(conn, target, tp["manager"])
+        mb.delete_user(conn, tgt)
     finally:
         conn.close()
-    _reload_members()
-    return mb.group_view(_members, email)
+    _reload_directory()
+    return mb.users_view(_members, email)
 
 
 # ---- Word Cloud ------------------------------------------------------------

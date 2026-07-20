@@ -32,7 +32,7 @@ def _cfg_to_env(c):
     e["EMAIL_DOMAIN"] = c["identity"]["email_domain"]
     e["ADMIN_EMAILS"] = ",".join(c["identity"].get("admins", []))
     e["SOURCE_INFERENCE_TABLE"] = c["sources"]["inference_table"]
-    e["SOURCE_DIRECTORY_TABLE"] = c["sources"]["directory_table"]
+    e["SOURCE_DIRECTORY_TABLE"] = c["sources"].get("directory_table", "")   # optional (directory-import path only)
     e["SOURCE_USAGE_TABLE"] = c["sources"].get("usage_table", "system.serving.endpoint_usage")
     e["APP_URL"] = c["app"]["url"]; e["CLASSIFIER_MODEL"] = c["app"].get("classifier_model", "databricks-claude-haiku-4-5")
     # Full per-model map: region-resolved (fetch_pricing) + bundled fallback +
@@ -130,12 +130,22 @@ def main():
     print("== 3. copy ds_* UC → Lakebase ==")
     copy_uc_to_lakebase(c, wh)
 
-    print("== 4. seed identity from directory ==")
+    # Identity is managed in-app (admins add users in the Manage Users console),
+    # so seeding is OPTIONAL: run it only if the customer pointed us at an existing
+    # directory table for a one-shot import. Otherwise the app bootstraps the
+    # config admins at startup and they add everyone else by hand.
     s = c["sources"]
-    subprocess.run(py + [os.path.join(HERE, "seed_identity.py"), "--warehouse", wh, "--profile", profile,
-                         "--email-col", s.get("dir_email_col", "email"), "--team-col", s.get("dir_team_col", "team"),
-                         "--dept-col", s.get("dir_dept_col", "department"), "--role-col", s.get("dir_role_col", "title"),
-                         "--manager-col", s.get("dir_manager_col", "manager_email")], check=True)
+    if s.get("directory_table"):
+        print("== 4. import identity from directory (optional) ==")
+        subprocess.run(py + [os.path.join(HERE, "seed_identity.py"), "--warehouse", wh, "--profile", profile,
+                             "--email-col", s.get("dir_email_col", "email"), "--team-col", s.get("dir_team_col", "team"),
+                             "--dept-col", s.get("dir_dept_col", "department"), "--role-col", s.get("dir_role_col", "title"),
+                             "--manager-col", s.get("dir_manager_col", "manager_email")], check=True)
+    else:
+        print("== 4. identity: manual mode ==\n"
+              "  No sources.directory_table set — skipping import. Admins listed in\n"
+              "  identity.admins will be bootstrapped at app startup; add everyone\n"
+              "  else via the Manage Users tab.")
     print("\nData plane ready. If the app was already bundle-deployed, restart it (or POST /api/refresh).")
 
 

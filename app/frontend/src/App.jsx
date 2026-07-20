@@ -72,7 +72,7 @@ export default function App() {
   const admin = p.is_admin
   const roleLabel = admin ? 'Admin' : p.role_type === 'director' ? 'Director' : mgr ? 'Manager' : 'Individual'
   // Tab gating: `mgr` tabs need the team/all view (managers + admin); `manage`
-  // tabs need edit rights (managers only — the read-all admin doesn't manage).
+  // tabs need user-admin rights (admins + managers, via can_manage).
   const visibleTabs = TABS.filter((t) => (!t.mgr || mgr) && (!t.manage || p.can_manage))
   const Active = visibleTabs.find((t) => t.id === active) || visibleTabs[0]
 

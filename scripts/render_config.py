@@ -64,7 +64,7 @@ def render_app_yaml(c):
         "MANAGER_EMAILS": ",".join(c["identity"].get("managers", [])),
         "IDENTITY_SOURCE": "directory",
         "SOURCE_INFERENCE_TABLE": c["sources"]["inference_table"],
-        "SOURCE_DIRECTORY_TABLE": c["sources"]["directory_table"],
+        "SOURCE_DIRECTORY_TABLE": c["sources"].get("directory_table", ""),
         "SOURCE_USAGE_TABLE": c["sources"].get("usage_table", "system.serving.endpoint_usage"),
         "UC_CATALOG": c["uc"]["catalog"], "UC_SCHEMA": c["uc"]["schema"],
         "CLASSIFIER_MODEL": c["app"].get("classifier_model", "databricks-claude-haiku-4-5"),

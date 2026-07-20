@@ -24,27 +24,27 @@ sources:
   inference_table: acme_ai_gov.gateway.inference_logs   # Unity AI Gateway inference (payload) logging table
   usage_table: system.serving.endpoint_usage            # AI Gateway usage system table (usually leave as-is)
   audit_table: system.access.audit                      # UC audit log (leave as-is)
-  directory_table: acme_hr.people.directory             # org directory: one row per person
-  # Column names IN your directory table (map to the customer's real schema):
-  dir_email_col: email              # → person's email
-  dir_team_col: team                # → team name
-  dir_dept_col: department          # → department / business unit
-  dir_role_col: title               # → job title
-  dir_manager_col: manager_email    # → their manager's email (drives the org hierarchy / scoping)
+  # OPTIONAL directory import — you normally DON'T need this. Identity is managed
+  # in-app: your admins add users (Name / Email / Manager / Role) from the
+  # "Manage Users" tab, just like adding users to a Databricks workspace. Only
+  # set directory_table if you'd like to BULK-IMPORT an existing org directory as
+  # a one-time head start; the columns below map its schema to ours.
+  # directory_table: acme_hr.people.directory   # org directory: one row per person
+  # dir_email_col: email              # → person's email
+  # dir_team_col: team                # → team name
+  # dir_dept_col: department          # → department / business unit
+  # dir_role_col: title               # → job title
+  # dir_manager_col: manager_email    # → their manager's email (builds the hierarchy)
 
 identity:
   email_domain: acme.com            # customer email domain (used to turn handles ↔ emails)
-  admins:                           # users who get the full admin (all-users) view
-    - ai-governance-admin@acme.com
-    - platform-lead@acme.com
-  managers:                         # ONLY these users can create & manage teams
-    # Every manager below gets the manager view + a "Manage Users" tab where they
-    # add/remove people (by email) from their team. Everyone NOT listed here (and
-    # not an admin) is an individual contributor — personal view only.
-    # Leave this list empty to instead auto-detect managers from the directory's
-    # reporting lines (anyone who has direct reports).
-    - engineering-manager@acme.com
-    - data-science-lead@acme.com
+  admins:                           # bootstrap admins — created at first startup so
+    - ai-governance-admin@acme.com  #   they can sign in (SSO) and add everyone else
+    - platform-lead@acme.com        #   via the Manage Users tab. Usually just you.
+  managers:                         # OPTIONAL — pre-create these people as managers at
+    []                              #   startup. Leave empty ([]); admins can add
+    # - engineering-manager@acme.com #   managers in-app. Only use this to seed managers
+    # - data-science-lead@acme.com   #   before anyone logs in.
 
 app:
   url: https://gatewayiq-1234567890.aws.databricksapps.com  # deployed app URL (used in email links)

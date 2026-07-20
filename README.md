@@ -18,10 +18,14 @@ Unity AI Gateway logs + system tables            (real source)
 ```
 - **Use-case classification is AI-driven** — `ai_query()` with a Claude model
   (`CLASSIFIER_MODEL`, default Haiku). This is enforced, not rule-based.
-- **Auth is workspace SSO** — the app reads `X-Forwarded-Email`; identity/teams
-  come from the customer directory. No passwords are stored.
-- **Scoping**: admin → all users, manager → their team (editable), IC → self.
-- **Managers**: exactly the emails in `MANAGER_EMAILS` (config) may create/manage teams — they get a **Manage Users** tab to add/remove people by email (directory members only). Leave the list empty to auto-detect managers from the directory's reporting lines instead.
+- **Auth is workspace SSO** — the app reads `X-Forwarded-Email`. No passwords are stored.
+- **Scoping**: admin → all users, manager → their team, user → self.
+- **Users are managed in-app** — like a Databricks workspace. The admins listed in
+  `ADMIN_EMAILS` are created at first startup; they sign in and use the **Manage
+  Users** tab to add people (Name / Email / Manager / Role — User, Manager or Admin).
+  Admins and managers can both add users and assign any role. No directory table
+  is required. (Optionally, set `sources.directory_table` to bulk-import an
+  existing org directory once as a head start — see below.)
 
 ## Prerequisites
 1. Unity AI Gateway **usage tracking + inference (payload) logging** enabled on
@@ -42,7 +46,7 @@ cp customer.yaml.example customer.yaml      # 1. fill in the customer's values (
 `install.sh` does three things from that one config:
 1. **render** `app.yaml` env + bundle variables from `customer.yaml`,
 2. **`databricks bundle deploy`** — provisions the **App + its db/secret resources + the weekly Job** declaratively (no `apps update --json`, no manual Job creation), and
-3. **data-plane install** (`scripts/install.py`) — creates the Lakebase DB, runs `load_from_gateway.py` (AI classifier) to build `ds_*` in UC, copies them to Lakebase, and seeds identity from the directory.
+3. **data-plane install** (`scripts/install.py`) — creates the Lakebase DB, runs `load_from_gateway.py` (AI classifier) to build `ds_*` in UC, copies them to Lakebase. Identity is managed in-app, so no seeding is needed unless you set `sources.directory_table` for a one-shot bulk-import.
 
 Re-running `install.sh` (or `databricks bundle deploy`) is idempotent — that's your upgrade path too. `bundle validate` passes.
 
@@ -56,10 +60,10 @@ Prefer to run steps individually? Each is a standalone script (`render_config.py
 | `LAKEBASE_ADMIN_USER` | ✅ (loaders) | Table-owner identity |
 | `APP_URL` | ✅ | Deployed app URL (email links) |
 | `EMAIL_DOMAIN` | ✅ | Customer email domain (handle↔email) |
-| `ADMIN_EMAILS` | ✅ | Comma-separated admin emails |
-| `MANAGER_EMAILS` | (directory) | Comma-separated emails allowed to create & manage teams. Authoritative when set; empty → auto-detect from directory reporting lines |
+| `ADMIN_EMAILS` | ✅ | Comma-separated admin emails, bootstrapped at first startup |
+| `MANAGER_EMAILS` | (none) | Optional — emails pre-created as managers at startup. Usually empty; add managers in-app |
 | `SOURCE_INFERENCE_TABLE` | ✅ | AI Gateway inference (payload) table |
-| `SOURCE_DIRECTORY_TABLE` | ✅ | email/team/dept/role/manager |
+| `SOURCE_DIRECTORY_TABLE` | (none) | Optional — only for the one-shot directory bulk-import |
 | `SOURCE_USAGE_TABLE` | (system.serving.endpoint_usage) | override if different |
 | `UC_CATALOG` / `UC_SCHEMA` | ✅ / (gatewayiq) | UC target the loader writes |
 | `CLASSIFIER_MODEL` | (Haiku) | AI use-case classifier |
@@ -82,7 +86,9 @@ Prefer to run steps individually? Each is a standalone script (`render_config.py
    ⚠️ **Validate the ADAPTER views** in `load_from_gateway.py` against the real
    schema (the demo base-table shapes match production, so they're usually
    passthrough — map columns only if names differ).
-2. **Seed identity** from the directory:
+2. **Identity** — nothing to seed. The `ADMIN_EMAILS` you set are bootstrapped at
+   app startup; they sign in and add everyone else via the **Manage Users** tab.
+   _(Optional one-shot bulk-import of an existing directory:)_
    ```bash
    ADMIN_EMAILS=<a@x,b@x> SOURCE_DIRECTORY_TABLE=<cat.sch.dir> EMAIL_DOMAIN=<x> \
    python3 scripts/seed_identity.py --warehouse <id> --profile <p> \
@@ -98,8 +104,9 @@ Prefer to run steps individually? Each is a standalone script (`render_config.py
    NOT auto-apply the yaml `resources:` block).
 6. **Weekly Job**: upload `scripts/weekly_report_job.py`, create it scheduled
    (keep `test_mode=true` + a `test_recipient` until you're ready to email users).
-7. **Verify**: open via SSO → land on My Usage; admins/managers see all tabs;
-   Notifications → preview + send-test.
+7. **Verify**: open via SSO as an admin → **Manage Users** → add a couple of users
+   (Name / Email / Manager / Role); admins/managers see all tabs; a plain user sees
+   only My Usage + Word Cloud; Notifications → preview + send-test.
 
 ## Model pricing — full catalog, region-correct, auto-resolved
 GatewayIQ prices the **entire Unity AI Gateway model catalog** (Claude, Llama,

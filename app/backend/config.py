@@ -37,7 +37,7 @@ GOOGLE_QUOTA_PROJECT = _env("GOOGLE_QUOTA_PROJECT")  # gmail transport only
 SOURCE_USAGE_TABLE = _env("SOURCE_USAGE_TABLE", "system.serving.endpoint_usage")
 SOURCE_INFERENCE_TABLE = _env("SOURCE_INFERENCE_TABLE")   # REQUIRED — AI Gateway inference (payload) table
 SOURCE_AUDIT_TABLE = _env("SOURCE_AUDIT_TABLE", "system.access.audit")
-SOURCE_DIRECTORY_TABLE = _env("SOURCE_DIRECTORY_TABLE")   # REQUIRED for identity — email/team/dept/role/manager
+SOURCE_DIRECTORY_TABLE = _env("SOURCE_DIRECTORY_TABLE")   # OPTIONAL — only for the directory-import seed path
 # AI classifier for use-case labelling (ALWAYS on — classification MUST be AI-driven).
 CLASSIFIER_MODEL = _env("CLASSIFIER_MODEL", "databricks-claude-haiku-4-5")
 
@@ -116,15 +116,17 @@ UC_SCHEMA = _env("UC_SCHEMA", "gatewayiq")
 # SOURCE_DIRECTORY_TABLE by scripts/seed_identity.py, and auth is workspace SSO.
 IDENTITY_SOURCE = _env("IDENTITY_SOURCE", "directory")
 ADMIN_EMAILS = [e.strip().lower() for e in _env("ADMIN_EMAILS").split(",") if e.strip()]
-# Managers — the ONLY users allowed to create and manage teams. Authoritative
-# when set: exactly these emails get team-management rights (the "Manage Users"
-# tab + /api/group* writes), regardless of directory reporting lines. Leave
-# empty to fall back to directory-derived managers (anyone with direct reports).
+# Bootstrap managers — seeded as manager-role users at first startup so they can
+# sign in and use the Manage Users console. NOT a runtime authority: once seeded,
+# roles are managed in-app (admins/managers add users and pick their role). Most
+# deployments only need ADMIN_EMAILS; add managers here only to pre-create them.
 MANAGER_EMAILS = [e.strip().lower() for e in _env("MANAGER_EMAILS").split(",") if e.strip()]
 
-# Values that must be set for a working deployment.
+# Values that must be set for a working deployment. Identity is managed in-app
+# (admins add users via the Manage Users console), so the directory table is
+# optional — it's only needed for the one-shot directory-import seed path.
 REQUIRED = ["PGHOST", "APP_SP_ROLE", "APP_URL", "EMAIL_DOMAIN",
-            "SOURCE_INFERENCE_TABLE", "SOURCE_DIRECTORY_TABLE", "UC_CATALOG"]
+            "SOURCE_INFERENCE_TABLE", "UC_CATALOG"]
 
 
 def validate():

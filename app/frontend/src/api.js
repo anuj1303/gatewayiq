@@ -52,31 +52,34 @@ export async function fetchDataset(name) {
   return j.rows
 }
 
-// ---- Team management (managers) ------------------------------------------
-export async function fetchGroup() {
-  const r = await fetch('/api/group', { headers: h() })
-  if (!r.ok) throw new Error('Failed to load team')
-  return r.json()
+// ---- User administration (admins & managers) -----------------------------
+const USER_ERRORS = {
+  'not-a-manager': 'You don’t have permission to manage users.',
+  'bad-email': 'Please enter a valid email address.',
+  'missing-name': 'Please enter the person’s name.',
+  'bad-role': 'Please choose a role.',
+  'user-needs-manager': 'A User must be assigned to a manager. Pick a manager, or set the role to Manager/Admin.',
+  'manager-out-of-scope': 'You can only assign users under a manager on your own team.',
+  'cannot-remove-self': 'You can’t remove your own account.',
+  'out-of-scope': 'That user isn’t on your team.',
+  'bad-target': 'That user no longer exists.',
 }
-async function _groupEdit(path, email) {
+async function _usersReq(path, body) {
   const r = await fetch(path, {
-    method: 'POST',
-    headers: { ...h(), 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email }),
+    method: body ? 'POST' : 'GET',
+    headers: body ? { ...h(), 'Content-Type': 'application/json' } : h(),
+    body: body ? JSON.stringify(body) : undefined,
   })
   if (!r.ok) {
     let detail = ''
     try { detail = (await r.json()).detail } catch {}
-    const msg = {
-      'bad-target': 'That email isn’t a recognized user in your directory. You can only add people who exist in the org directory.',
-      'not-a-manager': 'You don’t have permission to manage teams.',
-    }[detail] || 'Team update failed. Please try again.'
-    throw new Error(msg)
+    throw new Error(USER_ERRORS[detail] || 'User update failed. Please try again.')
   }
   return r.json()
 }
-export const addMember = (email) => _groupEdit('/api/group/add', email)
-export const removeMember = (email) => _groupEdit('/api/group/remove', email)
+export const fetchUsers = () => _usersReq('/api/users')
+export const saveUser = (user) => _usersReq('/api/users/save', user)
+export const removeUser = (email) => _usersReq('/api/users/remove', { email })
 
 // ---- Word cloud ----------------------------------------------------------
 export async function wordcloudOptions() {

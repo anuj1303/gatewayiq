@@ -177,19 +177,11 @@ def is_admin(email):
 
 
 def can_manage(membership, email):
-    """Who may create/manage a team.
-
-    Config-authoritative: if `MANAGER_EMAILS` is set, ONLY those emails may
-    manage (the read-all admin never edits groups). If it's empty, fall back to
-    directory-derived managers — a listed role_type or anyone with direct
-    reports — so behaviour is unchanged when no manager list is configured."""
-    email = (email or "").lower()
-    if cfg.MANAGER_EMAILS:
-        return email in cfg.MANAGER_EMAILS
+    """Who may add / edit / remove users. Role-based: admins and managers
+    (role_type set on the user record — assigned via the Manage Users console or
+    bootstrapped from ADMIN_EMAILS / MANAGER_EMAILS)."""
     p = person(email)
-    if p and p["role_type"] in _MGR_TYPES:
-        return True
-    return bool(direct_reports(membership, email))
+    return bool(p and p["role_type"] in ({"admin"} | _MGR_TYPES))
 
 
 def is_manager(membership, email):
@@ -198,13 +190,9 @@ def is_manager(membership, email):
 
 
 def _manages_a_team(membership, email):
-    """True if this person heads a selectable team org — config manager list
-    when set, else a manager/director role_type or someone with reports."""
-    email = (email or "").lower()
-    if cfg.MANAGER_EMAILS:
-        return email in cfg.MANAGER_EMAILS
+    """True if this person heads a selectable team org (a manager/director)."""
     p = person(email)
-    return bool((p and p["role_type"] in _MGR_TYPES) or direct_reports(membership, email))
+    return bool(p and p["role_type"] in _MGR_TYPES)
 
 
 def scope_emails(membership, email):
@@ -287,3 +275,74 @@ def group_view(membership, mgr_email):
                   for u in _USERS.values()
                   if u["email"] not in member_set and u.get("role_type") != "admin"]
     return {"members": people, "candidates": candidates}
+
+
+# --------------------------------------------------------------------------- #
+# User administration (Manage Users console) — write to app_users / app_membership.
+# The runtime directory (_USERS) is refreshed from Lakebase after each write.
+# --------------------------------------------------------------------------- #
+ROLE_TYPES = ("ic", "manager", "admin")   # UI: User / Manager / Admin
+
+
+def upsert_user(conn, *, email, name, role_type, manager=None, title="", team="", dept=""):
+    """Create or update a user + their team membership. `manager` is the
+    manager's email (the team they belong to); role_type ∈ ROLE_TYPES."""
+    email = (email or "").strip().lower()
+    manager = (manager or "").strip().lower() or None
+    role_type = role_type if role_type in ROLE_TYPES else "ic"
+    handle = email.split("@")[0]
+    if not title:
+        title = {"admin": "Administrator", "manager": "Manager"}.get(role_type, "User")
+    if not team:
+        # Members sit in their manager's team; managers/admins head their own.
+        if manager and manager in _USERS:
+            team = _USERS[manager].get("team") or (_USERS[manager]["name"] + "'s Team")
+        else:
+            team = name + "'s Team" if role_type in _MGR_TYPES else "Unassigned"
+    role = role_type if role_type != "ic" else "user"
+    with conn.cursor() as cur:
+        cur.execute(
+            "INSERT INTO app_users (email,handle,name,title,dept,role,role_type,manager,team) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s) ON CONFLICT (email) DO UPDATE SET "
+            "name=EXCLUDED.name, title=EXCLUDED.title, dept=EXCLUDED.dept, role=EXCLUDED.role, "
+            "role_type=EXCLUDED.role_type, manager=EXCLUDED.manager, team=EXCLUDED.team",
+            (email, handle, name, title, dept, role, role_type, manager, team))
+        # team_owner = the manager whose group they're in (admins/self-managed → themselves)
+        owner = manager if manager else email
+        cur.execute("INSERT INTO app_membership (email, team_owner) VALUES (%s,%s) "
+                    "ON CONFLICT (email) DO UPDATE SET team_owner=EXCLUDED.team_owner", (email, owner))
+    conn.commit()
+
+
+def delete_user(conn, email):
+    email = (email or "").strip().lower()
+    with conn.cursor() as cur:
+        cur.execute("DELETE FROM app_users WHERE email=%s", (email,))
+        cur.execute("DELETE FROM app_membership WHERE email=%s", (email,))
+        # Orphaned reports fall back to no manager (become unassigned ICs' owner=self).
+        cur.execute("UPDATE app_membership SET team_owner=email WHERE team_owner=%s", (email,))
+    conn.commit()
+
+
+def users_view(membership, caller_email):
+    """Full user list the caller may administer, + the manager dropdown options.
+    Admin → everyone; manager → their team closure."""
+    visible = scope_emails(membership, caller_email)
+    users = []
+    for e in sorted(visible):
+        p = _USERS.get(e)
+        if not p:
+            continue
+        users.append({"email": p["email"], "name": p["name"], "title": p["title"],
+                      "team": p["team"], "role_type": p["role_type"],
+                      "manager": p.get("manager"), "is_self": e == caller_email})
+    return {"users": users, "managers": manager_options(membership, caller_email),
+            "roles": list(ROLE_TYPES)}
+
+
+def manager_options(membership, caller_email):
+    """Emails a new user can be assigned under — every manager/admin in view."""
+    visible = scope_emails(membership, caller_email)
+    return [{"email": _USERS[e]["email"], "name": _USERS[e]["name"]}
+            for e in sorted(visible)
+            if e in _USERS and _USERS[e]["role_type"] in ({"admin"} | _MGR_TYPES)]

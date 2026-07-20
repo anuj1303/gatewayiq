@@ -54,9 +54,11 @@ Tick each box before moving on:
 - [ ] **A Lakebase instance exists** (ask the admin for its **name** and **host**).
 - [ ] **A Service Principal for the app** (ask the admin for its **client id** —
       a long code like `1111-2222-3333`).
-- [ ] **An org directory table** — a table listing your people (email, team,
-      manager, job title). Ask the admin for its full name, e.g.
-      `hr.people.directory`.
+- [ ] **The email addresses of your admin(s)** — the people who should manage the
+      system. That's all you need for identity; you add everyone else from inside
+      the app once it's running. *(No org directory table required.)*
+- [ ] *(Optional)* An existing org directory table (email, team, manager, title)
+      if you'd rather bulk-import your people once instead of adding them by hand.
 - [ ] *(Optional, only if you want the weekly email feature)* Gmail sending set up.
       You can skip this and add it later.
 
@@ -162,11 +164,10 @@ your Part 1 notes. The important ones:
 | `lakebase: app_sp` | the Service Principal client id from your admin |
 | `uc: catalog` | where the data tables get created (ask admin, or use the example) |
 | `sources: inference_table` | the AI Gateway logging table from your admin |
-| `sources: directory_table` | your org directory table |
-| `sources: dir_*_col` | the column names inside that directory table |
+| `sources: directory_table` | **leave commented out** unless you're bulk-importing an existing directory |
 | `identity: email_domain` | your company email domain, e.g. `acme.com` |
-| `identity: admins` | the emails of people who should see **everything** (usually you) |
-| `identity: managers` | the emails of people who can **create and manage teams** — each gets a "Manage Users" tab to add/remove people. Leave empty to auto-detect from the directory instead. |
+| `identity: admins` | the emails of people who should see **everything** and manage users (usually you) |
+| `identity: managers` | leave as `[]` — you add managers from inside the app. Only fill this to pre-create managers before anyone logs in. |
 | `app: url` | leave the example for now; you can update it after first deploy |
 
 **Save the file** (Mac: `Cmd+S`; Windows: File → Save) and close the editor.
@@ -237,6 +238,13 @@ This can take several minutes. When it finishes you'll see:
      **all the tabs** across the top (Executive Overview, Users & Teams, Anomaly
      Detection, and so on).
    - Charts and numbers fill in. 🎉 **You're done.**
+
+**Add your people.** Open the **Manage Users** tab. Fill in the short form —
+**Name**, **Email**, choose a **Manager**, and pick a **Role** (User, Manager, or
+Admin) — then click **Add user**. Repeat for everyone who needs access. It works
+just like adding users to a Databricks workspace. Users see only their own AI
+usage, managers see their team, admins see everyone. You can change anyone's role
+or manager later from the same tab.
 
 If you set up email (Part 5), open the **Notifications** tab → **Send test to
 myself** to confirm email delivery.

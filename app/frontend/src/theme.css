@@ -358,8 +358,20 @@ td.clip { max-width: 340px; white-space: normal; overflow-wrap: anywhere; word-b
   background: var(--panel-3); border: 1px solid var(--border); }
 .member-row .btn-ghost { margin-left: auto; padding: 5px 10px; font-size: 12px; }
 
-/* Manage Users tab */
-.add-email-row { display: flex; align-items: stretch; gap: 10px; }
-.add-email-row .login-search { margin-bottom: 0; }
+/* Manage Users console */
 .banner-ok { padding: 9px 12px; border-radius: 9px; font-size: 12.5px;
   background: rgba(87,217,138,0.10); border: 1px solid rgba(87,217,138,0.32); color: #8ce8b0; }
+.user-form { display: grid; grid-template-columns: 1.4fr 1.6fr 0.9fr 1.2fr auto; gap: 12px; align-items: end; }
+@media (max-width: 900px) { .user-form { grid-template-columns: 1fr 1fr; } }
+.field { display: flex; flex-direction: column; gap: 5px; }
+.field-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-faint); }
+.user-form .pw-submit { height: 38px; white-space: nowrap; }
+.input-sm { padding: 6px 8px; font-size: 12.5px; }
+.user-table { display: flex; flex-direction: column; gap: 6px; }
+.user-row { display: grid; grid-template-columns: minmax(220px, 2.4fr) 0.9fr 1.2fr auto; gap: 12px;
+  align-items: center; padding: 8px 11px; border-radius: 10px; background: var(--panel-3); border: 1px solid var(--border); }
+.user-row-head { background: transparent; border: none; padding: 2px 11px; font-size: 11px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-faint); }
+.user-cell-name { display: flex; align-items: center; gap: 11px; min-width: 0; }
+.user-row .btn-danger { margin-left: auto; padding: 5px 10px; font-size: 12px; }
+@media (max-width: 720px) { .user-row, .user-row-head { grid-template-columns: 1fr; } .user-row-head { display: none; } }
