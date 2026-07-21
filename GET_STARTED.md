@@ -118,8 +118,8 @@ Tick each box before moving on:
       the app once it's running. *(No org directory table required.)*
 - [ ] *(Optional)* An existing org directory table (email, team, manager, title)
       if you'd rather bulk-import your people once instead of adding them by hand.
-- [ ] *(Optional, only if you want the weekly email feature)* Gmail sending set up.
-      You can skip this and add it later.
+- [ ] *(Nothing needed for email now.)* Weekly-report email is set up **inside the
+      app** afterward — each manager connects their own mailbox. See Part 5.
 
 > 💡 **Tip:** Copy all the answers above into a notes file (Apple Notes, Notepad,
 > anything). You'll paste them into one config file in Part 4.
@@ -253,22 +253,27 @@ your Part 1 notes. The important ones:
 
 ---
 
-## Part 5 — Create the "locked box" for email keys (optional)
+## Part 5 — Email (set up later, inside the app)
 
-**Skip this whole part if you don't want the weekly-email feature yet** — the
-dashboard works fine without it, and you can add it later.
+**There is nothing to do here at install time**, and no "secret scope" to create.
+Email is **self-service inside the app** once it's running, so the weekly reports
+send from **each manager's own mailbox** — not a shared address.
 
-If you *do* want emails, you need a "secret scope" (the locked box) named
-`gatewayiq`. Your admin (or you, if you have the Gmail keys) runs:
-```bash
-databricks secrets create-scope gatewayiq --profile myprofile
-databricks secrets put-secret gatewayiq google-client-id --profile myprofile
-databricks secrets put-secret gatewayiq google-client-secret --profile myprofile
-databricks secrets put-secret gatewayiq google-refresh-token --profile myprofile
-```
-Each `put-secret` opens a little editor — paste the matching key, save, close.
-(Where do these Gmail keys come from? That's a separate Google setup — ask whoever
-manages your company's Google/Gmail, or skip email for now.)
+When you're ready for email (after the app is up), two one-time steps happen in the
+app's **Notifications** tab:
+
+1. **An admin connects the organization's Google account (once).** In Google Cloud,
+   someone creates an OAuth "Web application" client and registers the app's
+   callback address (`https://<your-app-url>/api/gmail/oauth/callback`). The admin
+   pastes that client's **id + secret** into the panel on the Notifications tab.
+   *(Ask whoever manages your company's Google/Workspace — this is a normal Google
+   admin task.)*
+2. **Each manager clicks "Connect Gmail" (once).** They approve a Google popup, and
+   from then on their weekly reports send from their own address. They can
+   disconnect any time.
+
+So: you can finish the install now and set up email whenever you like — no keys, no
+locked box, no re-deploy.
 
 ---
 
@@ -322,8 +327,9 @@ just like adding users to a Databricks workspace. Users see only their own AI
 usage, managers see their team, admins see everyone. You can change anyone's role
 or manager later from the same tab.
 
-If you set up email (Part 5), open the **Notifications** tab → **Send test to
-myself** to confirm email delivery.
+To turn on email (Part 5): open the **Notifications** tab, click **Connect Gmail**
+(an admin sets the org Google client there first, once), then **Send test to
+myself** to confirm delivery from your own address.
 
 > **Turning on the weekly email (later, when you're ready):** the installer created
 > a weekly email job but left it **paused** and in **test mode** (all mail goes to

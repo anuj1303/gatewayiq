@@ -30,14 +30,14 @@ Unity AI Gateway logs + system tables            (real source)
 ## Prerequisites
 1. Unity AI Gateway **usage tracking + inference (payload) logging** enabled on
    the serving endpoints; **system tables** on (`system.serving.*`, `system.access.audit`).
-2. A SQL **warehouse**, a **Lakebase** instance, a **service principal** for the app,
-   and (for email) a mail transport + secret scope.
+2. A SQL **warehouse**, a **Lakebase** instance, and a **service principal** for the app.
+   (Email needs no secret scope — it's self-service per user; see [Email](#email-per-user-send-from-your-own-mailbox).)
 
 ## Two ways to install
 
 - **Path A — In-workspace notebook (no CLI).** Clone this repo as a **Git folder**
-  inside the workspace, open **`scripts/install_notebook`**, fill the widgets, and
-  **Run All**. Best if you'd rather not touch a terminal. See
+  inside the workspace, open **`scripts/install_notebook`**, edit the one config
+  cell, and **Run All**. Best if you'd rather not touch a terminal. See
   [In-workspace install](#install-in-workspace-notebook-no-cli) below.
 - **Path B — One command (CLI).** `git clone` locally + `./install.sh customer.yaml`.
   Best for scripted/repeatable deploys. See [One-command install](#install-one-command) below.
@@ -94,9 +94,10 @@ Then, from the repo root:
 
 ```bash
 cp customer.yaml.example customer.yaml      # 1. fill in the customer's values (one file)
-# 2. create the mail secret scope `gatewayiq` (google-client-id/secret/refresh-token) — secrets can't live in yaml
-./install.sh customer.yaml                  # 3. installs everything
+./install.sh customer.yaml                  # 2. installs everything
 ```
+(No mail secret scope to create — email is self-service per user; see
+[Email](#email-per-user-send-from-your-own-mailbox).)
 
 `install.sh` does three things from that one config:
 1. **render** `app.yaml` env + bundle variables from `customer.yaml`,
@@ -168,8 +169,9 @@ Prefer to run steps individually? Each is a standalone script (`render_config.py
 3. **Provision Lakebase** (instance + `gatewayiq` DB), push `ds_*` from UC into
    Lakebase (UC→Lakebase sync, or adapt `load_lakebase.py` to read UC), and grant
    the app SP its Postgres role + `SELECT` on `ds_*` / DML on `app_*`.
-4. **Secret scope** for mail (`gatewayiq`: `google-client-id/secret/refresh-token`),
-   grant the app SP READ.
+4. **Email** — nothing to set up at deploy. After the app is running, an admin
+   pastes the org Google OAuth client into the Notifications tab (once) and each
+   manager clicks **Connect Gmail**; see [Email](#email-per-user-send-from-your-own-mailbox).
 5. **Deploy the app**: fill `app/app.yaml`, run `scripts/deploy.sh`, then register
    resources: `databricks apps update <app> --json '{"resources":[…]}'` (Apps does
    NOT auto-apply the yaml `resources:` block).
