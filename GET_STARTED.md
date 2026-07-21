@@ -254,6 +254,15 @@ myself** to confirm email delivery.
 > one test address) so it can't accidentally email your whole company. When you're
 > confident, ask your admin to flip `test_mode` to `false` and un-pause the job.
 
+> **Keeping the dashboard up to date:** the install loads your data once. The
+> installer also created a **"GatewayIQ — Data Refresh"** job that rebuilds the
+> data from your live AI Gateway tables (daily, by default) so the dashboard stays
+> current — but it's left **paused** too. Once you've confirmed the numbers look
+> right, open **Workflows**, find that job, and un-pause it. It costs a little each
+> run (it re-classifies requests with AI); if you'd rather avoid that, set
+> `data_refresh.skip_classifier: true` in `customer.yaml` and re-deploy. Until you
+> un-pause it, the dashboard keeps showing the data from install time.
+
 ---
 
 ## Part 8 — If something goes wrong (Troubleshooting)

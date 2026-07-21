@@ -76,3 +76,12 @@ weekly_report:
   test_mode: true                           # true → ALL mail goes to test_recipient (safe default)
   test_recipient: ai-governance-admin@acme.com   # where test-mode mail lands; flip test_mode→false to email real users
   days: 7                                   # report window (last N days)
+
+# Data refresh — rebuilds ds_* from your real Unity AI Gateway tables and refreshes
+# the app's Lakebase serving copy so the dashboard stays current. Deployed as the
+# "GatewayIQ — Data Refresh" Job, created PAUSED. Enable it (unpause) once you've
+# validated the adapter views in load_from_gateway.py against your real schema and
+# are ready for the recurring classifier cost. Uses the `timezone` above.
+data_refresh:
+  schedule_cron: "0 0 6 * * ?"              # Quartz cron — daily 06:00 (before the workday)
+  skip_classifier: false                    # true → skip the ai_query use-case classifier (no LLM cost, labels = "trivial")

@@ -88,14 +88,19 @@ def render_app_yaml(c):
 
 def bundle_vars(c):
     wr = c["weekly_report"]
+    dr = c.get("data_refresh") or {}
     return {
         "app_name": c["app_name"], "warehouse_id": c["warehouse_id"],
         "lakebase_instance": c["lakebase"]["instance"], "lakebase_host": c["lakebase"]["host"],
         "lakebase_db": c["lakebase"]["database"], "secret_scope": c["mail"]["secret_scope"],
         "uc_catalog": c["uc"]["catalog"], "app_url": c["app"]["url"],
+        "app_sp": c["lakebase"]["app_sp"],
         "test_mode": str(wr.get("test_mode", True)).lower(), "test_recipient": wr.get("test_recipient", ""),
         "days": str(wr.get("days", 7)), "schedule_cron": wr.get("schedule_cron", "0 0 9 ? * MON"),
         "timezone": wr.get("timezone", "UTC"),
+        # Daily data-refresh job (rebuild ds_* from real Gateway tables → Lakebase).
+        "refresh_cron": dr.get("schedule_cron", "0 0 6 * * ?"),
+        "refresh_skip_classifier": str(dr.get("skip_classifier", False)).lower(),
     }
 
 

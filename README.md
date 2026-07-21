@@ -45,10 +45,24 @@ cp customer.yaml.example customer.yaml      # 1. fill in the customer's values (
 
 `install.sh` does three things from that one config:
 1. **render** `app.yaml` env + bundle variables from `customer.yaml`,
-2. **`databricks bundle deploy`** — provisions the **App + its db/secret resources + the weekly Job** declaratively (no `apps update --json`, no manual Job creation), and
+2. **`databricks bundle deploy`** — provisions the **App + its db/secret resources + the weekly-email Job + the daily data-refresh Job** declaratively (no `apps update --json`, no manual Job creation), and
 3. **data-plane install** (`scripts/install.py`) — creates the Lakebase DB, runs `load_from_gateway.py` (AI classifier) to build `ds_*` in UC, copies them to Lakebase. Identity is managed in-app, so no seeding is needed unless you set `sources.directory_table` for a one-shot bulk-import.
 
 Re-running `install.sh` (or `databricks bundle deploy`) is idempotent — that's your upgrade path too. `bundle validate` passes.
+
+### Keeping the dashboard current (data-refresh Job)
+The install loads the data once. To keep it fresh, the bundle also deploys a
+**`GatewayIQ — Data Refresh`** Job (`scripts/refresh_data_job.py`) that, on a
+schedule, rebuilds `ds_*` from your real Unity AI Gateway tables and refreshes the
+app's Lakebase serving copy. It calls the **same `load_from_gateway.build_all()`**
+the installer uses (so the scheduled build can't drift from the install build),
+then copies UC→Lakebase and best-effort `POST /api/refresh` (else the app picks up
+new data within `CACHE_TTL`, default 3600s).
+
+- **Created PAUSED**, daily at 06:00 by default (`data_refresh.schedule_cron`, uses the same `timezone`).
+- **Enable it** once you've validated the adapter views: un-pause the `GatewayIQ — Data Refresh` Job in Workflows.
+- **Cost:** each run re-runs the `ai_query` use-case classifier over inference rows (one LLM call per request). Set `data_refresh.skip_classifier: true` to skip it (labels everything `trivial`, no LLM cost).
+- Runs on the Job's own cluster via `spark.sql` — no SQL warehouse needed.
 
 Prefer to run steps individually? Each is a standalone script (`render_config.py`, `load_from_gateway.py`, `seed_identity.py`, `install.py`) — see below.
 
@@ -70,6 +84,8 @@ Prefer to run steps individually? Each is a standalone script (`render_config.py
 | `MODEL_PRICING` | (auto-resolved from system.billing; bundled fallback) | Full per-model rate map — see "Model pricing" below |
 | `MAIL_FROM_EMAIL` / `GMAIL_*` | to send | mail sender + secret-scope creds |
 | `IDENTITY_SOURCE` | (directory) | leave as `directory` |
+| `data_refresh.schedule_cron` | (`0 0 6 * * ?`) | daily data-refresh Job cron (PAUSED until enabled) |
+| `data_refresh.skip_classifier` | (false) | skip the `ai_query` classifier on refresh (no LLM cost) |
 
 ## Individual steps (what `install.sh` runs under the hood)
 > The App, its db/secret **resources**, and the weekly **Job** are all declared in

@@ -191,19 +191,21 @@ FROM {TGT}.ai_gateway_inference_logs WHERE status_code = 200
 """
 
 
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--warehouse", required=True, help="target SQL warehouse id")
-    ap.add_argument("--profile", default=cfg.DATABRICKS_PROFILE)
-    ap.add_argument("--to-lakebase", action="store_true", help="also copy ds_* into Lakebase")
-    ap.add_argument("--skip-classifier", action="store_true", help="skip the ai_query use-case classifier (LLM cost)")
-    ap.add_argument("--dry-run", action="store_true")
-    args = ap.parse_args()
+def load_etl_sql():
+    """Load the captured reference SQL (views + datasets). Shared by the CLI and
+    the scheduled refresh notebook so they build identical objects."""
+    return (json.load(open(f"{ETL}/views.json")), json.load(open(f"{ETL}/datasets.json")))
 
-    views = json.load(open(f"{ETL}/views.json"))
-    datasets = json.load(open(f"{ETL}/datasets.json"))
-    run = lambda s: run_sql(args.profile, args.warehouse, s, args.dry_run)
 
+def build_all(run, views, datasets, skip_classifier=False):
+    """Build the whole UC layer — adapter views → classifier → anomaly legend →
+    13 v_* views → 33 ds_* tables — in `{UC_CATALOG}.{UC_SCHEMA}`.
+
+    `run` is an injected SQL executor: `run(stmt) -> result`. The CLI passes a
+    Statement-Execution-API runner; the scheduled notebook passes a `spark.sql`
+    wrapper. Everything else (config, pricing, de-demo rewrites) is shared, so
+    both paths produce byte-identical objects and can't drift apart.
+    """
     print(f"Target: {TGT}  |  usage={cfg.SOURCE_USAGE_TABLE}  inference={cfg.SOURCE_INFERENCE_TABLE}")
     run(f"CREATE CATALOG IF NOT EXISTS {cfg.UC_CATALOG}")
     run(f"CREATE SCHEMA IF NOT EXISTS {TGT}")
@@ -212,7 +214,7 @@ def main():
     for name, body in adapter_views().items():
         run(f"CREATE OR REPLACE VIEW {TGT}.{name} AS {body}"); print(f"  {name}")
 
-    if not args.skip_classifier:
+    if not skip_classifier:
         print("== 2. classified_requests (ai_query) =="); run(CLASSIFIER_SQL); print("  done")
     else:
         run(f"CREATE OR REPLACE VIEW {TGT}.classified_requests AS SELECT *, 'trivial' AS classified_use_case "
@@ -257,6 +259,22 @@ def main():
         run(f"CREATE OR REPLACE TABLE {TGT}.{name} AS {sub(dsql)}"); print(f"  {name}")
 
     print(f"\nOK — built adapter + {len(views)} views + {len(datasets)} ds_* tables in {TGT}")
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--warehouse", required=True, help="target SQL warehouse id")
+    ap.add_argument("--profile", default=cfg.DATABRICKS_PROFILE)
+    ap.add_argument("--to-lakebase", action="store_true", help="also copy ds_* into Lakebase")
+    ap.add_argument("--skip-classifier", action="store_true", help="skip the ai_query use-case classifier (LLM cost)")
+    ap.add_argument("--dry-run", action="store_true")
+    args = ap.parse_args()
+
+    views, datasets = load_etl_sql()
+    run = lambda s: run_sql(args.profile, args.warehouse, s, args.dry_run)
+
+    build_all(run, views, datasets, skip_classifier=args.skip_classifier)
+
     if args.to_lakebase:
         print("\n== 6. push ds_* to Lakebase ==")
         print("  Run: python3 scripts/load_lakebase.py  (point PGHOST/PGDATABASE at the target Lakebase,")
