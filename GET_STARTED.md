@@ -127,27 +127,44 @@ If it prints your name/email, ✅ you're connected.
 
 ---
 
-## Part 4 — Fill in your settings (the one file you edit)
+## Part 4 — Get the code, then fill in your settings
 
-Everything the installer needs lives in **one file**. You make your own copy of a
-template, then fill in the blanks with the answers from your Part 1 notes.
+First you download the GatewayIQ code onto your computer, then you make your own
+copy of a settings template and fill in the blanks with your Part 1 notes.
 
-### 4a. Go into the GatewayIQ folder
-In the Terminal, type `cd ` (with a space), then **drag the GatewayIQ folder from
-your file explorer into the Terminal window** (this pastes its location), then press
-Enter. It looks like:
+### 4a. Download (clone) the GatewayIQ code
+
+**Option A — with `git` (recommended).** Most computers already have `git`. In the
+Terminal, paste:
 ```bash
-cd /Users/you/Desktop/CustomerDemos/gatewayiq-deploy
+git clone https://github.com/anuj1303/gatewayiq.git
 ```
+This downloads a folder named `gatewayiq` into wherever your Terminal currently is
+(usually your home folder). If it says `command not found: git`, use Option B.
 
-### 4b. Make your own copy of the settings template
+**Option B — no `git` (download a ZIP).** Open
+**https://github.com/anuj1303/gatewayiq** in your browser → green **Code** button →
+**Download ZIP** → double-click the downloaded file to unzip it. You'll get a
+folder called `gatewayiq-main`.
+
+### 4b. Go into the GatewayIQ folder
+In the Terminal, type `cd ` (with a space), then **drag the folder you just got
+(`gatewayiq` or `gatewayiq-main`) from your file explorer into the Terminal
+window** (this pastes its location), then press Enter. It looks like:
+```bash
+cd /Users/you/gatewayiq
+```
+To confirm you're in the right place, type `ls` and press Enter — you should see
+`customer.yaml.example`, `install.sh`, and a `scripts` folder listed.
+
+### 4c. Make your own copy of the settings template
 ```bash
 cp customer.yaml.example customer.yaml
 ```
 This creates `customer.yaml` — **this is the file you edit.** (Never edit the
 `.example` one; it's the blank master.)
 
-### 4c. Open `customer.yaml` in a text editor
+### 4d. Open `customer.yaml` in a text editor
 - **Mac:** `open -e customer.yaml`
 - **Windows:** `notepad customer.yaml`
 
@@ -200,7 +217,7 @@ manages your company's Google/Gmail, or skip email for now.)
 
 This one command does everything: it sets up the app, creates the database, loads
 your data, and figures out AI pricing. Make sure you're still inside the
-GatewayIQ folder (from step 4a), then paste:
+GatewayIQ folder (from step 4b), then paste:
 
 ```bash
 ./install.sh customer.yaml
@@ -270,7 +287,8 @@ myself** to confirm email delivery.
 | What you see | What it usually means | What to do |
 |---|---|---|
 | `command not found: databricks` | The CLI didn't install, or Terminal needs restarting. | Close and reopen Terminal; redo Part 2c. |
-| `config not found: customer.yaml` | You're not in the right folder, or didn't copy the template. | Redo steps 4a and 4b. |
+| `command not found: git` | You don't have `git` installed. | Use **Option B** in step 4a — download the ZIP from the GitHub page instead. |
+| `config not found: customer.yaml` | You're not in the right folder, or didn't copy the template. | Redo steps 4b and 4c. |
 | Error mentioning **profile** or **401 / unauthorized** | Your login token expired or the profile name is wrong. | Redo Part 3 (get a fresh token); check `profile:` in `customer.yaml` matches. |
 | Error mentioning **warehouse** | Wrong or missing Warehouse ID. | Double-check `warehouse_id:` with your admin. |
 | Error mentioning **permission / CREATE / role** | Your login can't create something; an admin needs to grant access. | Send the error to your Databricks admin. |

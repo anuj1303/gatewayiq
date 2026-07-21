@@ -35,7 +35,15 @@ Unity AI Gateway logs + system tables            (real source)
 
 ## Install (one command)
 
-Everything is driven by a **single `customer.yaml`** and packaged as a **Databricks Asset Bundle** + a one-command wrapper. From a clone of this repo:
+Everything is driven by a **single `customer.yaml`** and packaged as a **Databricks Asset Bundle** + a one-command wrapper.
+
+**First, get the code:**
+```bash
+git clone https://github.com/anuj1303/gatewayiq.git
+cd gatewayiq
+```
+
+Then, from the repo root:
 
 ```bash
 cp customer.yaml.example customer.yaml      # 1. fill in the customer's values (one file)
