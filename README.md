@@ -49,17 +49,36 @@ so they can't drift; both create the two Jobs **PAUSED**.
 
 1. In the workspace: **Workspace → Create → Git folder**, repo URL
    `https://github.com/anuj1303/gatewayiq`, and clone it.
-2. (Only if you want the weekly email) create the `gatewayiq` **secret scope** with
-   `google-client-id` / `google-client-secret` / `google-refresh-token`. Skip
-   otherwise — the installer deploys without email creds and you can add them later.
-3. Open **`scripts/install_notebook`** in the Git folder. Fill the widgets
-   (warehouse id, UC catalog, Lakebase host/instance, app SP client_id, inference
+2. Open **`scripts/install_notebook`** in the Git folder. Edit the single **config
+   cell** (it's pre-filled with a real AWS FE VM example — replace with your
+   warehouse id, UC catalog, Lakebase host/instance, app SP client_id, inference
    table, email domain, admin emails), then **Run All**.
 
+**No secret scope needed** — email is now self-service (see [Email](#email-per-user-send-from-your-own-mailbox)).
 It renders `app.yaml`, builds `ds_*` in UC, provisions Lakebase (DB + the app SP's
 Postgres role + data + `app_*` tables), deploys the App via the Databricks SDK,
 creates the Weekly + Data-Refresh Jobs (both **PAUSED**), and prints the app URL.
 Idempotent — re-run it any time (e.g. to set the app URL after the first run).
+
+## Email (per-user: send from your own mailbox)
+
+Weekly reports send from **each manager's own Gmail/Workspace mailbox**, not a
+shared address — so there's **no secret scope to create at deploy time**. Two
+one-time steps, both done *inside the app* (Notifications tab) after it's running:
+
+1. **Admin sets the org OAuth client (once).** In Google Cloud, create an OAuth
+   **Web application** client and add the app's callback —
+   `https://<your-app-url>/api/gmail/oauth/callback` — to its *Authorized redirect
+   URIs*. Paste the client **id + secret** into the admin panel on the Notifications
+   tab. Stored in Lakebase `app_settings` (not a Databricks secret scope).
+2. **Each manager clicks "Connect Gmail" (once).** A Google consent popup; their
+   refresh token is stored in `app_gmail_tokens` and their reports send as them.
+   They can **Disconnect** any time.
+
+The Weekly Report Job then sends each manager's team reports from that manager's
+mailbox; managers who haven't connected are skipped. (The legacy shared-token env
+path — `GMAIL_*` / `MAIL_FROM_EMAIL` — still works as a fallback but is no longer
+the recommended model.)
 
 ## Install one command
 

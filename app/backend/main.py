@@ -26,7 +26,7 @@ import psycopg2
 import psycopg2.extras
 from fastapi import FastAPI, HTTPException, Request, Body
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 
@@ -289,6 +289,96 @@ def _require_identity(request: Request) -> str:
     if not email:
         raise HTTPException(status_code=401, detail="no-identity")
     return email
+
+
+# ---------------------------------------------------------------------------
+# Per-user Gmail OAuth ("Connect Gmail"). Each manager connects their own mailbox
+# once; we store their refresh token in app_gmail_tokens and send their reports
+# from their own address. The org's Google OAuth client (id/secret) is set by an
+# admin in-app and lives in app_settings — so NO Databricks secret scope needed.
+# ---------------------------------------------------------------------------
+import secrets as _secrets  # noqa: E402
+import base64 as _b64       # noqa: E402
+import json as _json        # noqa: E402
+
+_oauth_states = {}          # transient CSRF state -> email (in-memory, short-lived)
+
+
+def _settings_get(key, default=""):
+    conn = _fresh_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY, value TEXT)")
+            cur.execute("SELECT value FROM app_settings WHERE key=%s", (key,))
+            row = cur.fetchone()
+            return row[0] if row else default
+    finally:
+        conn.close()
+
+
+def _settings_set(key, value):
+    conn = _fresh_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY, value TEXT)")
+            cur.execute("INSERT INTO app_settings (key, value) VALUES (%s,%s) "
+                        "ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value", (key, value))
+    finally:
+        conn.close()
+
+
+def _oauth_client():
+    """The org Google OAuth client — from app_settings (admin-set, in-app) first,
+    else the env fallback. Returns (client_id, client_secret) or ('','')."""
+    cid = _settings_get("google_oauth_client_id") or cfg.GOOGLE_OAUTH_CLIENT_ID
+    csec = _settings_get("google_oauth_client_secret") or cfg.GOOGLE_OAUTH_CLIENT_SECRET
+    return cid, csec
+
+
+def _gmail_token_get(email):
+    conn = _fresh_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT refresh_token, gmail_address FROM app_gmail_tokens WHERE email=%s", (email,))
+            row = cur.fetchone()
+            return {"refresh_token": row[0], "gmail_address": row[1]} if row else None
+    finally:
+        conn.close()
+
+
+def _gmail_token_save(email, refresh_token, gmail_address):
+    conn = _fresh_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("INSERT INTO app_gmail_tokens (email, refresh_token, gmail_address, connected_at) "
+                        "VALUES (%s,%s,%s, now()::text) ON CONFLICT (email) DO UPDATE SET "
+                        "refresh_token=EXCLUDED.refresh_token, gmail_address=EXCLUDED.gmail_address, "
+                        "connected_at=EXCLUDED.connected_at", (email, refresh_token, gmail_address))
+    finally:
+        conn.close()
+
+
+def _gmail_token_delete(email):
+    conn = _fresh_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM app_gmail_tokens WHERE email=%s", (email,))
+    finally:
+        conn.close()
+
+
+def _send_as_user(sender_email, *, to_email, subject, html, wordcloud_b64=None):
+    """Send an email from `sender_email`'s own connected mailbox. Raises with a
+    clear message if they haven't connected Gmail or the client isn't configured."""
+    tok = _gmail_token_get(sender_email)
+    if not tok:
+        raise HTTPException(status_code=428, detail="gmail-not-connected")
+    cid, csec = _oauth_client()
+    if not cid or not csec:
+        raise HTTPException(status_code=501, detail="oauth-client-not-configured")
+    gm.send_html(to_email=to_email, subject=subject, html=html, wordcloud_b64=wordcloud_b64,
+                 refresh_token=tok["refresh_token"], client_id=cid, client_secret=csec,
+                 from_name=cfg.MAIL_FROM_NAME, from_email=None)
 
 
 # ---- Scoped-bundle cache (keyed by the visible-handle signature) -----------
@@ -795,10 +885,6 @@ def notif_send_test(request: Request, payload: dict = Body(...)):
     email = _require_identity(request)
     if not mb.persona(_members, email)["is_manager"]:
         raise HTTPException(status_code=403, detail="manager/admin only")
-    if not gm.configured():
-        raise HTTPException(status_code=501, detail="Gmail not connected — create the `gatewayiq` "
-                            "secret scope (google-refresh-token/client-id/client-secret), reference it "
-                            "in app.yaml, and redeploy. See scripts/setup_gmail_secret.md.")
     kind, label, greeting, handles = _resolve_notif_target(email, payload)
     report = _build_report(kind, label, greeting, handles,
                            payload.get("date_from") or "0000", payload.get("date_to") or "9999")
@@ -806,8 +892,11 @@ def notif_send_test(request: Request, payload: dict = Body(...)):
     subject = payload.get("subject") or "GatewayIQ Weekly Report"
     status, err = "sent", None
     try:
-        gm.send_html(to_email=email, subject=subject, html=rpt.build_html(report),
-                     wordcloud_b64=report.get("wordcloud_b64"))
+        # Sent FROM and TO the caller's own connected mailbox.
+        _send_as_user(email, to_email=email, subject=subject, html=rpt.build_html(report),
+                      wordcloud_b64=report.get("wordcloud_b64"))
+    except HTTPException:
+        raise
     except Exception as e:
         status, err = "failed", str(e)[:300]
     _log_email(email, kind, subject, status, err)
@@ -818,18 +907,109 @@ def notif_send_test(request: Request, payload: dict = Body(...)):
 
 @app.get("/api/notifications/gmail-status")
 def gmail_status(request: Request):
-    """Whether Gmail delivery is wired up (validates the token via the profile
-    endpoint — no email is sent). Manager/admin only."""
+    """Whether the CALLER has connected their own mailbox. Manager/admin only.
+    Also reports whether the org OAuth client is configured (so the UI can prompt
+    an admin to set it), and whether the caller is an admin (to show that panel)."""
+    email = _require_identity(request)
+    persona = mb.persona(_members, email)
+    if not persona["is_manager"]:
+        raise HTTPException(status_code=403, detail="manager/admin only")
+    cid, csec = _oauth_client()
+    client_ready = bool(cid and csec)
+    is_admin = persona.get("role_type") == "admin"
+    tok = _gmail_token_get(email)
+    if not tok:
+        return {"client_ready": client_ready, "is_admin": is_admin, "connected": False}
+    # Validate the caller's own token (no send).
+    try:
+        prof = gm.profile(tok["refresh_token"], client_id=cid, client_secret=csec)
+        return {"client_ready": client_ready, "is_admin": is_admin, "connected": True,
+                "ok": True, "sender": prof.get("emailAddress")}
+    except Exception as e:
+        return {"client_ready": client_ready, "is_admin": is_admin, "connected": True,
+                "ok": False, "error": str(e)[:200]}
+
+
+@app.get("/api/gmail/oauth/start")
+def gmail_oauth_start(request: Request):
+    """Begin the Connect-Gmail flow: returns the Google consent URL for the caller."""
     email = _require_identity(request)
     if not mb.persona(_members, email)["is_manager"]:
         raise HTTPException(status_code=403, detail="manager/admin only")
-    if not gm.configured():
-        return {"configured": False}
+    cid, csec = _oauth_client()
+    if not cid or not csec:
+        raise HTTPException(status_code=501, detail="oauth-client-not-configured")
+    redirect_uri = cfg.GOOGLE_OAUTH_REDIRECT_URI
+    if not redirect_uri:
+        raise HTTPException(status_code=501, detail="APP_URL not set — cannot build the OAuth callback URL")
+    # Signed-ish state: random token mapped to the caller (defends against CSRF).
+    state = _secrets.token_urlsafe(24)
+    _oauth_states[state] = email
+    return {"authorize_url": gm.authorize_url(client_id=cid, redirect_uri=redirect_uri, state=state)}
+
+
+@app.get("/api/gmail/oauth/callback")
+def gmail_oauth_callback(request: Request):
+    """Google redirects here with ?code&state. Exchange the code, store the
+    caller's refresh token, then return a tiny HTML page that closes the popup."""
+    params = request.query_params
+    code, state = params.get("code"), params.get("state")
+    err = params.get("error")
+    email = _oauth_states.pop(state, None) if state else None
+
+    def _close_page(msg, ok=True):
+        color = "#57D98A" if ok else "#FF7AA8"
+        return HTMLResponse(
+            f"<html><body style='background:#0A0D14;color:{color};font-family:sans-serif;"
+            f"text-align:center;padding-top:80px'><h2>{msg}</h2>"
+            f"<p style='color:#8a93a5'>You can close this window and return to GatewayIQ.</p>"
+            f"<script>setTimeout(()=>window.close(),1500)</script></body></html>")
+
+    if err:
+        return _close_page(f"Gmail connection cancelled ({err}).", ok=False)
+    if not code or not email:
+        return _close_page("Gmail connection failed — invalid or expired request.", ok=False)
+    cid, csec = _oauth_client()
     try:
-        prof = gm.profile()
-        return {"configured": True, "ok": True, "sender": prof.get("emailAddress")}
+        tokens = gm.exchange_code(code=code, client_id=cid, client_secret=csec,
+                                  redirect_uri=cfg.GOOGLE_OAUTH_REDIRECT_URI)
+        refresh = tokens.get("refresh_token")
+        if not refresh:
+            return _close_page("Google didn't return a refresh token — try disconnecting the app in your "
+                               "Google account, then Connect again.", ok=False)
+        # Confirm which mailbox this is.
+        prof = gm.profile(refresh, client_id=cid, client_secret=csec)
+        _gmail_token_save(email, refresh, prof.get("emailAddress", ""))
+        return _close_page(f"Gmail connected as {prof.get('emailAddress','')}. ✓")
     except Exception as e:
-        return {"configured": True, "ok": False, "error": str(e)[:200]}
+        return _close_page(f"Gmail connection failed: {str(e)[:160]}", ok=False)
+
+
+@app.post("/api/gmail/oauth/disconnect")
+def gmail_oauth_disconnect(request: Request):
+    """Forget the caller's stored mailbox token."""
+    email = _require_identity(request)
+    if not mb.persona(_members, email)["is_manager"]:
+        raise HTTPException(status_code=403, detail="manager/admin only")
+    _gmail_token_delete(email)
+    return {"status": "disconnected"}
+
+
+@app.post("/api/gmail/oauth/client")
+def gmail_oauth_set_client(request: Request, payload: dict = Body(...)):
+    """Admin-only: set the org Google OAuth client id/secret (stored in Lakebase
+    app_settings, so no secret scope is needed). Returns the callback URL to
+    register on the OAuth client."""
+    email = _require_identity(request)
+    if mb.persona(_members, email).get("role_type") != "admin":
+        raise HTTPException(status_code=403, detail="admin only")
+    cid = (payload.get("client_id") or "").strip()
+    csec = (payload.get("client_secret") or "").strip()
+    if not cid or not csec:
+        raise HTTPException(status_code=400, detail="client_id and client_secret are required")
+    _settings_set("google_oauth_client_id", cid)
+    _settings_set("google_oauth_client_secret", csec)
+    return {"status": "saved", "redirect_uri": cfg.GOOGLE_OAUTH_REDIRECT_URI}
 
 
 @app.post("/api/notifications/send")
@@ -853,22 +1033,25 @@ def notif_send(request: Request, payload: dict = Body(...)):
         return {"count": len(recips), "scope_label": label,
                 "recipients": [{"name": p["name"], "email": p["email"]} for p in recips]}
 
-    if not gm.configured():
-        raise HTTPException(status_code=501, detail="Gmail not connected — set up the `gatewayiq` "
-                            "secret scope and redeploy (scripts/setup_gmail.md).")
+    # The caller must have connected their own mailbox — everything is sent as them.
+    if not _gmail_token_get(email):
+        raise HTTPException(status_code=428, detail="gmail-not-connected")
+    cid, csec = _oauth_client()
+    if not cid or not csec:
+        raise HTTPException(status_code=501, detail="oauth-client-not-configured")
     d_from = payload.get("date_from") or "0000"
     d_to = payload.get("date_to") or "9999"
     sent = failed = 0
     results = []
     for p in recips:
-        # every recipient gets their OWN personal report
+        # every recipient gets their OWN personal report, sent from the caller's mailbox
         rep = _build_report("user", p["name"], p["name"].split()[0], {p["handle"]}, d_from, d_to)
         rep["wordcloud_src"] = f"cid:{gm.CID}"
         subject = f"GatewayIQ Weekly — your AI usage ({d_from} → {d_to})"
         st, err = "sent", None
         try:
-            gm.send_html(to_email=p["email"], subject=subject, html=rpt.build_html(rep),
-                         wordcloud_b64=rep.get("wordcloud_b64"))
+            _send_as_user(email, to_email=p["email"], subject=subject, html=rpt.build_html(rep),
+                          wordcloud_b64=rep.get("wordcloud_b64"))
             sent += 1
         except Exception as e:
             st, err, failed = "failed", str(e)[:200], failed + 1

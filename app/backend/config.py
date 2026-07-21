@@ -30,8 +30,23 @@ EMAIL_DOMAIN = _env("EMAIL_DOMAIN")                  # REQUIRED — customer ema
 # ── Mail (weekly report emails) ──────────────────────────────────────────────
 MAIL_TRANSPORT = _env("MAIL_TRANSPORT", "gmail")     # "gmail" | "smtp"
 MAIL_FROM_NAME = _env("MAIL_FROM_NAME", "GatewayIQ")
-MAIL_FROM_EMAIL = _env("MAIL_FROM_EMAIL")            # REQUIRED to send — sender on customer domain
+MAIL_FROM_EMAIL = _env("MAIL_FROM_EMAIL")            # optional shared sender (legacy). Per-user is preferred.
 GOOGLE_QUOTA_PROJECT = _env("GOOGLE_QUOTA_PROJECT")  # gmail transport only
+
+# ── Per-user Gmail OAuth ("Connect Gmail") ───────────────────────────────────
+# Each manager connects their OWN mailbox once, inside the app, so their reports
+# send from their own address — no shared secret scope, no common sender. This
+# uses a standard Google "Web application" OAuth client. The client id/secret are
+# set by an admin IN THE APP (stored in Lakebase app_settings), so they can be
+# provided post-deploy via the UI rather than a secret scope. Env values here are
+# an optional fallback (e.g. if you'd still rather inject them via app.yaml).
+GOOGLE_OAUTH_CLIENT_ID = _env("GOOGLE_OAUTH_CLIENT_ID")
+GOOGLE_OAUTH_CLIENT_SECRET = _env("GOOGLE_OAUTH_CLIENT_SECRET")
+# The redirect/callback URI Google sends the user back to. Must be registered on
+# the OAuth client's "Authorized redirect URIs". Derived from APP_URL by default.
+GOOGLE_OAUTH_REDIRECT_URI = _env("GOOGLE_OAUTH_REDIRECT_URI") or (
+    (APP_URL.rstrip("/") + "/api/gmail/oauth/callback") if APP_URL else "")
+GMAIL_SEND_SCOPE = "https://www.googleapis.com/auth/gmail.send"
 
 # ── Data source: real Unity AI Gateway tables (loaders) ──────────────────────
 SOURCE_USAGE_TABLE = _env("SOURCE_USAGE_TABLE", "system.serving.endpoint_usage")

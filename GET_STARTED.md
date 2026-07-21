@@ -46,28 +46,31 @@ and your **admin email(s)**.
    then the **Create** button (top-right) → **Git folder**. In the box paste:
    `https://github.com/anuj1303/gatewayiq` and click **Create Git folder**. A folder
    called `gatewayiq` appears.
-2. **(Optional — email only)** If you want the weekly email feature, ask your admin
-   to create a **secret scope** named `gatewayiq` holding the Gmail keys. No email?
-   Skip this — you can add it later.
-3. **Open the installer.** Inside the `gatewayiq` folder, open the **`scripts`**
-   folder and click **`install_notebook`**. It opens like a page with **boxes at
-   the top** (called *widgets*).
-4. **Fill in the boxes** with your answers from the checklist above:
-   - `warehouse_id`, `uc_catalog`, `inference_table`, `lakebase_instance`,
-     `lakebase_host`, `app_sp`, `email_domain`, `admin_emails`.
-   - Leave `app_url` **blank** for now (you'll re-run once to fill it in later).
-5. **Click "Run all"** at the top of the page. Wait — it prints its progress. When
+2. **Open the installer.** Inside the `gatewayiq` folder, open the **`scripts`**
+   folder and click **`install_notebook`**. It opens like a page. Near the top is a
+   single **config cell** — a block of `name: value` lines.
+3. **Edit the config cell** with your answers from the checklist above:
+   `warehouse_id`, `uc_catalog`, `inference_table`, `lakebase_instance`,
+   `lakebase_host`, `app_sp`, `email_domain`, `admin_emails`. (It comes pre-filled
+   with a real example you overwrite.) Leave `app_url` **blank** for now — you'll
+   re-run once to fill it in later.
+4. **Click "Run all"** at the top of the page. Wait — it prints its progress. When
    it finishes it shows a link: **your app's URL**.
-6. **Open the app** (click the link), sign in with your company login (SSO), and add
+5. **Open the app** (click the link), sign in with your company login (SSO), and add
    your people from the **Manage Users** tab.
 
-That's it — no terminal, no installs on your computer. The installer also created
-two background jobs (email + daily data refresh), both left **paused**; turn them
-on from **Workflows** when you're ready (see the notes at the end of Part 7).
+That's it — no terminal, and **no secret scope to set up**. The installer also
+created two background jobs (email + daily data refresh), both left **paused**; turn
+them on from **Workflows** when you're ready (see the notes at the end of Part 7).
+
+> **Email is self-service** — nothing to configure here. Once the app is running,
+> each manager opens the **Notifications** tab and clicks **Connect Gmail** once, so
+> their weekly reports send from *their own* address. (The first time, an admin also
+> pastes the organization's Google OAuth client into that tab — a one-time step.)
 
 > **Tip:** the notebook is safe to **Run all** again any time. After your first run,
-> copy the app URL it printed into the `app_url` box and Run all once more so the
-> email links point at the right place.
+> copy the app URL it printed into the `app_url` line and Run all once more so the
+> in-app links point at the right place.
 
 ---
 

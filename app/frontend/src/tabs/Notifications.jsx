@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { Mail, Users2, User, CalendarRange, Sparkles, Send, Clock } from 'lucide-react'
+import { Mail, Users2, User, CalendarRange, Sparkles, Send, Clock, Link2, Unlink, ShieldCheck } from 'lucide-react'
 import { Card, Spinner } from '../components/ui.jsx'
 
 async function post(path, body, headers) {
@@ -28,8 +28,45 @@ export default function Notifications({ persona }) {
   const [sending, setSending] = useState(false)
   const [sendResult, setSendResult] = useState(null)
   const [gmail, setGmail] = useState(null)
+  const [oauthCid, setOauthCid] = useState('')
+  const [oauthSecret, setOauthSecret] = useState('')
+  const [clientMsg, setClientMsg] = useState(null)
+  const [connecting, setConnecting] = useState(false)
 
   const body = () => ({ scope, target_email: target, team_key: teamKey, date_from: from, date_to: to })
+
+  const refreshGmail = () =>
+    fetch('/api/notifications/gmail-status', { headers: asHeader() })
+      .then((r) => r.json()).then((g) => setGmail(g)).catch(() => {})
+
+  async function connectGmail() {
+    setConnecting(true); setErr(null)
+    try {
+      const { authorize_url } = await (await fetch('/api/gmail/oauth/start', { headers: asHeader() })).json()
+        .then((j) => j.authorize_url ? j : Promise.reject(new Error(j.detail || 'Could not start Gmail connect')))
+      // Open Google's consent screen in a popup; poll status until it closes.
+      const popup = window.open(authorize_url, 'gatewayiq_gmail', 'width=520,height=680')
+      const timer = setInterval(async () => {
+        if (popup && popup.closed) {
+          clearInterval(timer); setConnecting(false); refreshGmail()
+        }
+      }, 1000)
+    } catch (e) { setErr(e.message); setConnecting(false) }
+  }
+
+  async function disconnectGmail() {
+    try { await post('/api/gmail/oauth/disconnect', {}, asHeader()); refreshGmail() }
+    catch (e) { setErr(e.message) }
+  }
+
+  async function saveOauthClient() {
+    setClientMsg(null)
+    try {
+      const r = await post('/api/gmail/oauth/client', { client_id: oauthCid, client_secret: oauthSecret }, asHeader())
+      setClientMsg({ ok: true, text: `Saved. Register this redirect URI on the OAuth client: ${r.redirect_uri}` })
+      setOauthSecret(''); refreshGmail()
+    } catch (e) { setClientMsg({ ok: false, text: e.message }) }
+  }
 
   useEffect(() => {
     let alive = true
@@ -103,15 +140,45 @@ export default function Notifications({ persona }) {
         <span><b>Weekly schedule</b> — reports are generated every Monday for the prior 7 days. Personal reports go to each user; team reports go to their manager. Use this screen to preview exactly what recipients will see.</span>
       </div>
 
+      {/* Admin-only: set the org Google OAuth client once, so managers can connect. */}
+      {gmail && gmail.is_admin && !gmail.client_ready && (
+        <div className="scope-ribbon" style={{ borderRadius: 12, border: '1px solid rgba(255,158,77,0.35)',
+          background: 'rgba(255,158,77,0.08)', marginBottom: 16, display: 'block' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+            <ShieldCheck size={14} style={{ color: 'var(--sev-med)' }} />
+            <b>One-time setup — connect your organization's Google account</b>
+          </div>
+          <div style={{ fontSize: 12.5, color: 'var(--text-dim)', marginBottom: 10 }}>
+            Paste a Google <b>Web application</b> OAuth client (id + secret). Managers then click
+            “Connect Gmail” to send from their own mailbox. No Databricks secret scope needed.
+          </div>
+          <div className="controls" style={{ gap: 8, flexWrap: 'wrap' }}>
+            <input className="input" placeholder="OAuth client id" value={oauthCid} onChange={(e) => setOauthCid(e.target.value)} style={{ flex: 1, minWidth: 220 }} />
+            <input className="input" type="password" placeholder="OAuth client secret" value={oauthSecret} onChange={(e) => setOauthSecret(e.target.value)} style={{ flex: 1, minWidth: 220 }} />
+            <button className="pw-submit" style={{ padding: '9px 16px' }} onClick={saveOauthClient} disabled={!oauthCid || !oauthSecret}>Save</button>
+          </div>
+          {clientMsg && <div style={{ marginTop: 8, fontSize: 12, color: clientMsg.ok ? '#8ef0b4' : '#ffb4b4' }}>{clientMsg.ok ? '✓ ' : '⚠️ '}{clientMsg.text}</div>}
+        </div>
+      )}
+
       {gmail && (
         <div className="scope-ribbon" style={{ borderRadius: 12, border: '1px solid var(--border)', marginBottom: 16,
-          background: gmail.configured && gmail.ok ? 'rgba(87,217,138,0.08)' : 'rgba(255,158,77,0.08)' }}>
-          <Mail size={14} style={{ color: gmail.configured && gmail.ok ? 'var(--sev-low)' : 'var(--sev-high)' }} />
-          {gmail.configured && gmail.ok
-            ? <span><b>Gmail connected</b> — sending as <b>{gmail.sender}</b>. Real emails will be delivered.</span>
-            : gmail.configured
-            ? <span><b>Gmail error</b> — {gmail.error || 'token invalid'}. Preview works; delivery is disabled.</span>
-            : <span><b>Gmail not connected</b> — preview only. Set up the <code>gatewayiq</code> secret scope to enable delivery.</span>}
+          background: gmail.connected && gmail.ok ? 'rgba(87,217,138,0.08)' : 'rgba(255,158,77,0.08)' }}>
+          <Mail size={14} style={{ color: gmail.connected && gmail.ok ? 'var(--sev-low)' : 'var(--sev-high)' }} />
+          {gmail.connected && gmail.ok ? (
+            <span style={{ flex: 1 }}><b>Gmail connected</b> — your reports send from <b>{gmail.sender}</b>.</span>
+          ) : gmail.connected ? (
+            <span style={{ flex: 1 }}><b>Gmail error</b> — {gmail.error || 'token invalid'}. Reconnect below.</span>
+          ) : !gmail.client_ready ? (
+            <span style={{ flex: 1 }}><b>Email not set up yet</b> — an admin needs to connect the organization's Google account first (above).</span>
+          ) : (
+            <span style={{ flex: 1 }}><b>Connect your mailbox</b> to send reports from your own address. Preview works either way.</span>
+          )}
+          {gmail.client_ready && (gmail.connected
+            ? <button className="btn-ghost" onClick={disconnectGmail}><Unlink size={14} /> Disconnect</button>
+            : <button className="pw-submit" style={{ padding: '7px 14px' }} onClick={connectGmail} disabled={connecting}>
+                <Link2 size={14} /> {connecting ? 'Connecting…' : 'Connect Gmail'}
+              </button>)}
         </div>
       )}
 

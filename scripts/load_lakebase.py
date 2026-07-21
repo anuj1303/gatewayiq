@@ -113,6 +113,10 @@ def main():
                     "prompt_count TEXT, image_b64 TEXT)")
         cur.execute("CREATE TABLE IF NOT EXISTS app_email_log (recipient TEXT, kind TEXT, subject TEXT, "
                     "status TEXT, error TEXT, sent_at TEXT)")
+        # Per-user Gmail OAuth: each manager's own refresh token + the org OAuth client.
+        cur.execute("CREATE TABLE IF NOT EXISTS app_gmail_tokens (email TEXT PRIMARY KEY, "
+                    "refresh_token TEXT, gmail_address TEXT, connected_at TEXT)")
+        cur.execute("CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY, value TEXT)")
         set_clause = ", ".join(f"{c} = EXCLUDED.{c}" for c in USER_COLUMNS if c != "email")
         for u in SEED_USERS:
             cur.execute(
@@ -124,7 +128,8 @@ def main():
         for email, pw in CREDENTIALS.items():
             cur.execute("INSERT INTO app_credentials (email, password) VALUES (%s, %s) "
                         "ON CONFLICT (email) DO UPDATE SET password = EXCLUDED.password", (email, pw))
-        for t in ("app_users", "app_credentials", "app_membership", "app_wordclouds", "app_email_log"):
+        for t in ("app_users", "app_credentials", "app_membership", "app_wordclouds", "app_email_log",
+                  "app_gmail_tokens", "app_settings"):
             try:
                 cur.execute(sql.SQL("GRANT SELECT, INSERT, UPDATE, DELETE ON {} TO {}")
                             .format(sql.Identifier(t), sql.Identifier(APP_SP_ROLE)))

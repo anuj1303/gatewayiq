@@ -7,6 +7,11 @@
 # MAGIC Gmail API — reusing the app's own `report_build` / `report_email` /
 # MAGIC `wordcloud_gen` / `gmail_send` modules (synced with the app).
 # MAGIC
+# MAGIC **Per-manager sending:** each manager's reports go out from *their own*
+# MAGIC connected mailbox (the refresh token they authorized in-app, stored in
+# MAGIC `app_gmail_tokens`), using the org OAuth client from `app_settings`. Managers
+# MAGIC who haven't connected Gmail are skipped. **No shared secret scope.**
+# MAGIC
 # MAGIC **Safety:** `test_mode=true` (default) routes ALL mail to `test_recipient`
 # MAGIC so it never emails real colleagues until you flip it off. The Job is created
 # MAGIC **PAUSED**.
@@ -28,13 +33,6 @@ import sys, os, datetime
 sys.path.insert(0, dbutils.widgets.get("app_backend"))
 import roster, membership as mb, report_build as rb, report_email as rpt, wordcloud_gen as wcg, gmail_send as gm, config as cfg  # noqa: E402
 
-# Gmail creds from the `gatewayiq` secret scope
-for key, env in [("google-client-id", "GMAIL_CLIENT_ID"),
-                 ("google-client-secret", "GMAIL_CLIENT_SECRET"),
-                 ("google-refresh-token", "GMAIL_REFRESH_TOKEN")]:
-    os.environ[env] = dbutils.secrets.get("gatewayiq", key)
-REFRESH = os.environ["GMAIL_REFRESH_TOKEN"]
-
 # COMMAND ----------
 import psycopg2, psycopg2.extras
 ctx = dbutils.notebook.entry_point.getDbutils().notebook().getContext()
@@ -49,11 +47,20 @@ def _load(name):
     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
         cur.execute(f'SELECT * FROM public."{name}"')
         return [dict(r) for r in cur.fetchall()]
-for t in ["ds_trend", "ds_anomaly_incidents", "ds_blocked_prompts", "ds_usecase_detail", "app_users", "app_membership"]:
+for t in ["ds_trend", "ds_anomaly_incidents", "ds_blocked_prompts", "ds_usecase_detail",
+          "app_users", "app_membership", "app_gmail_tokens", "app_settings"]:
     _cache[t] = _load(t)
 rows = lambda n: _cache.get(n, [])
 
 # COMMAND ----------
+# Per-user Gmail: each manager sends their team's reports from their OWN connected
+# mailbox. The org OAuth client (id/secret) is in app_settings (admin-set in-app).
+_settings = {r["key"]: r["value"] for r in rows("app_settings")}
+CLIENT_ID = _settings.get("google_oauth_client_id") or cfg.GOOGLE_OAUTH_CLIENT_ID
+CLIENT_SECRET = _settings.get("google_oauth_client_secret") or cfg.GOOGLE_OAUTH_CLIENT_SECRET
+TOKENS = {r["email"]: r["refresh_token"] for r in rows("app_gmail_tokens")}   # manager email -> refresh token
+assert CLIENT_ID and CLIENT_SECRET, "No Google OAuth client set — an admin must set it in the app first."
+
 mb.set_directory(rows("app_users"))
 members = {r["email"]: r["team_owner"] for r in rows("app_membership")}
 all_dates = sorted(str(r["request_date"])[:10] for r in rows("ds_trend") if r.get("request_date"))
@@ -62,10 +69,12 @@ d_from = (datetime.date.fromisoformat(d_to) - datetime.timedelta(days=int(dbutil
 TEST = dbutils.widgets.get("test_mode").strip().lower() == "true"
 TEST_TO = dbutils.widgets.get("test_recipient")
 APP_URL = dbutils.widgets.get("app_url") or cfg.APP_URL
-print(f"window {d_from} → {d_to} | test_mode={TEST} → {TEST_TO if TEST else 'real recipients'}")
+print(f"window {d_from} → {d_to} | test_mode={TEST} → {TEST_TO if TEST else 'real recipients'} "
+      f"| {len(TOKENS)} manager mailbox(es) connected")
 
 # COMMAND ----------
-def send_report(kind, label, greeting, handles, to_email):
+def send_report(kind, label, greeting, handles, to_email, sender_email, sender_token):
+    """Build one report and send it FROM sender_email's mailbox."""
     rep = rb.build_report(rows, kind=kind, label=label, greeting_name=greeting, handles=handles,
                           d_from=d_from, d_to=d_to,
                           person_name=lambda h: (mb.person(mb.handle_to_email(h)) or {}).get("name", h),
@@ -77,28 +86,42 @@ def send_report(kind, label, greeting, handles, to_email):
     status, err = "sent", None
     try:
         gm.send_html(to_email=dest, subject=subject, html=rpt.build_html(rep),
-                     wordcloud_b64=rep.get("wordcloud_b64"), refresh_token=REFRESH)
+                     wordcloud_b64=rep.get("wordcloud_b64"), refresh_token=sender_token,
+                     client_id=CLIENT_ID, client_secret=CLIENT_SECRET, from_email=None)
     except Exception as e:
         status, err = "failed", str(e)[:300]
     with conn.cursor() as cur:
         cur.execute("INSERT INTO app_email_log (recipient, kind, subject, status, error, sent_at) "
                     "VALUES (%s,%s,%s,%s,%s,%s)",
                     (dest, kind, subject, status, err, datetime.datetime.utcnow().isoformat() + "Z"))
-    print(f"{kind:5} {label:24} → {dest:34} {status}" + (f"  ERR: {err}" if err else ""))
+    print(f"{kind:5} {label:22} {sender_email:28}→ {dest:30} {status}" + (f"  ERR: {err}" if err else ""))
 
 # COMMAND ----------
 users = rows("app_users")
+by_email = {u["email"]: u for u in users}
 data_handles = {r["requester"] for r in rows("ds_trend")}
 
-# 1) personal report for every user who has activity
-for u in users:
-    if u["handle"] in data_handles and u["role_type"] != "admin":
-        send_report("user", u["name"], u["name"].split()[0], {u["handle"]}, u["email"])
-
-# 2) team digest for every manager / director
-for u in users:
-    if u["role_type"] in ("manager", "director"):
-        team_handles = mb.emails_to_handles(mb.scope_emails(members, u["email"]))
-        send_report("team", u["team"], u["name"].split()[0], team_handles, u["email"])
+# Every manager/director who has connected their mailbox sends, FROM their own
+# address: (1) each of their team members' personal reports, (2) their team digest.
+# Managers who haven't connected Gmail are skipped (their team gets nothing this
+# run) — logged so it's visible.
+for mgr in users:
+    if mgr["role_type"] not in ("manager", "director"):
+        continue
+    token = TOKENS.get(mgr["email"])
+    if not token:
+        print(f"skip   {mgr['team']:22} {mgr['email']:28}→ (manager has not connected Gmail)")
+        continue
+    team_emails = mb.scope_emails(members, mgr["email"])
+    # 1) personal report to each team member with activity (not admins)
+    for em in team_emails:
+        u = by_email.get(em)
+        if u and u["handle"] in data_handles and u["role_type"] != "admin":
+            send_report("user", u["name"], u["name"].split()[0], {u["handle"]}, u["email"],
+                        mgr["email"], token)
+    # 2) team digest to the manager themselves
+    team_handles = mb.emails_to_handles(team_emails)
+    send_report("team", mgr["team"], mgr["name"].split()[0], team_handles, mgr["email"],
+                mgr["email"], token)
 
 print("weekly report run complete")
