@@ -15,6 +15,62 @@ first time it appears. Take it one numbered step at a time — don't skip ahead.
 
 ---
 
+## Choose your path (read this first)
+
+There are **two ways** to install GatewayIQ. They do exactly the same thing —
+pick whichever feels more comfortable:
+
+- **🖱️ Path A — Do it all inside Databricks (no terminal).** You never leave your
+  web browser. You copy the code into your workspace, open one page, type your
+  settings into boxes, and click **Run**. **If terminals scare you, use this.**
+  → Jump to **[Part A — Install inside the workspace](#part-a--install-inside-the-workspace-no-terminal)**.
+- **⌨️ Path B — Use the Terminal on your computer.** You install two small tools,
+  then run one command. Good if you like the command line or want to script it.
+  → Continue with **Part 0** below and follow Parts 1–9.
+
+Everything after this in the numbered Parts 1–9 is **Path B**. Path A is a single
+self-contained section. You only need to read one path.
+
+---
+
+## Part A — Install inside the workspace (no terminal)
+
+This whole path happens in your web browser, inside Databricks.
+
+**Before you start,** get these from your Databricks admin (same list as Path B's
+Part 1): a workspace login, **AI Gateway logging turned ON**, a **SQL warehouse
+ID**, a **Lakebase instance name + host**, the app's **service-principal client id**,
+and your **admin email(s)**.
+
+1. **Copy the code into your workspace.** In the left sidebar click **Workspace**,
+   then the **Create** button (top-right) → **Git folder**. In the box paste:
+   `https://github.com/anuj1303/gatewayiq` and click **Create Git folder**. A folder
+   called `gatewayiq` appears.
+2. **(Optional — email only)** If you want the weekly email feature, ask your admin
+   to create a **secret scope** named `gatewayiq` holding the Gmail keys. No email?
+   Skip this — you can add it later.
+3. **Open the installer.** Inside the `gatewayiq` folder, open the **`scripts`**
+   folder and click **`install_notebook`**. It opens like a page with **boxes at
+   the top** (called *widgets*).
+4. **Fill in the boxes** with your answers from the checklist above:
+   - `warehouse_id`, `uc_catalog`, `inference_table`, `lakebase_instance`,
+     `lakebase_host`, `app_sp`, `email_domain`, `admin_emails`.
+   - Leave `app_url` **blank** for now (you'll re-run once to fill it in later).
+5. **Click "Run all"** at the top of the page. Wait — it prints its progress. When
+   it finishes it shows a link: **your app's URL**.
+6. **Open the app** (click the link), sign in with your company login (SSO), and add
+   your people from the **Manage Users** tab.
+
+That's it — no terminal, no installs on your computer. The installer also created
+two background jobs (email + daily data refresh), both left **paused**; turn them
+on from **Workflows** when you're ready (see the notes at the end of Part 7).
+
+> **Tip:** the notebook is safe to **Run all** again any time. After your first run,
+> copy the app URL it printed into the `app_url` box and Run all once more so the
+> email links point at the right place.
+
+---
+
 ## Part 0 — Words you'll see (read this once)
 
 You don't need to memorize these — just glance at them, then refer back.
@@ -304,6 +360,8 @@ breaks from re-running.
 ## Part 9 — Where to get more detail
 
 - `README.md` — the same process written for engineers (more technical, terser).
+- **Part A** above — the no-terminal path, if you'd rather do everything inside the
+  Databricks web app (`scripts/install_notebook`).
 - The `# comments` inside `customer.yaml.example` — explain every single setting.
 - Your Databricks admin — the right person for anything about accounts,
   permissions, warehouses, or service principals.

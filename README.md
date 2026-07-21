@@ -33,7 +33,35 @@ Unity AI Gateway logs + system tables            (real source)
 2. A SQL **warehouse**, a **Lakebase** instance, a **service principal** for the app,
    and (for email) a mail transport + secret scope.
 
-## Install (one command)
+## Two ways to install
+
+- **Path A — In-workspace notebook (no CLI).** Clone this repo as a **Git folder**
+  inside the workspace, open **`scripts/install_notebook`**, fill the widgets, and
+  **Run All**. Best if you'd rather not touch a terminal. See
+  [In-workspace install](#install-in-workspace-notebook-no-cli) below.
+- **Path B — One command (CLI).** `git clone` locally + `./install.sh customer.yaml`.
+  Best for scripted/repeatable deploys. See [One-command install](#install-one-command) below.
+
+Both do the same work and reuse the same code (`render_config` + `load_from_gateway`),
+so they can't drift; both create the two Jobs **PAUSED**.
+
+## Install in-workspace notebook (no CLI)
+
+1. In the workspace: **Workspace → Create → Git folder**, repo URL
+   `https://github.com/anuj1303/gatewayiq`, and clone it.
+2. (Only if you want the weekly email) create the `gatewayiq` **secret scope** with
+   `google-client-id` / `google-client-secret` / `google-refresh-token`. Skip
+   otherwise — the installer deploys without email creds and you can add them later.
+3. Open **`scripts/install_notebook`** in the Git folder. Fill the widgets
+   (warehouse id, UC catalog, Lakebase host/instance, app SP client_id, inference
+   table, email domain, admin emails), then **Run All**.
+
+It renders `app.yaml`, builds `ds_*` in UC, provisions Lakebase (DB + the app SP's
+Postgres role + data + `app_*` tables), deploys the App via the Databricks SDK,
+creates the Weekly + Data-Refresh Jobs (both **PAUSED**), and prints the app URL.
+Idempotent — re-run it any time (e.g. to set the app URL after the first run).
+
+## Install one command
 
 Everything is driven by a **single `customer.yaml`** and packaged as a **Databricks Asset Bundle** + a one-command wrapper.
 
